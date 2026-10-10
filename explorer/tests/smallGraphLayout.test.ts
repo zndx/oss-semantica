@@ -28,6 +28,11 @@ test("small graph layout ignores isolated partial coordinates", () => {
 });
 
 test("small graph load is immediately ready and skips runtime stabilization", () => {
+  assert.deepEqual(resolveGraphLayoutDecision(0, 0), {
+    useProvidedCoordinates: false,
+    useSmallGraphLayout: false,
+    layoutReady: true,
+  });
   assert.deepEqual(resolveGraphLayoutDecision(12, 0), {
     useProvidedCoordinates: false,
     useSmallGraphLayout: true,

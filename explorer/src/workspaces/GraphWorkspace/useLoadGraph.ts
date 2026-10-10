@@ -1,4 +1,5 @@
 ﻿import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { GRAPH_FULL_LOAD_QUERY_KEY } from "./graphQuery";
 import { batchMergeEdges, batchMergeNodes, clearGraph } from "../../store/graphStore";
 import type { EdgeAttributes, NodeAttributes } from "../../store/graphStore";
 import { curveGroupForPair, pairRegistryKey } from "../../store/edgePairKeys.js";
@@ -478,7 +479,7 @@ export function useLoadGraph(options: UseLoadGraphOptions = {}) {
   const { enabled = true, onGraphReady, onProgress } = options;
 
   return useQuery<GraphLoadSummary>({
-    queryKey: ["graph", "full-load"],
+    queryKey: GRAPH_FULL_LOAD_QUERY_KEY,
     enabled,
     staleTime: Infinity,
     retry: 0,
@@ -742,5 +743,5 @@ export function useLoadGraph(options: UseLoadGraphOptions = {}) {
 
 export function useReloadGraph() {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: ["graph", "full-load"] });
+  return () => queryClient.invalidateQueries({ queryKey: GRAPH_FULL_LOAD_QUERY_KEY });
 }

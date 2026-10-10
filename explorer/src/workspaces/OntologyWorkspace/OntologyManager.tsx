@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { GRAPH_FULL_LOAD_QUERY_KEY } from "../GraphWorkspace/graphQuery";
 import {
   AlertCircle,
   BookMarked,
@@ -351,9 +353,13 @@ export function OntologyManager() {
     setRightPanel("none");
   };
 
+  const queryClient = useQueryClient();
   const handleLoaded = () => {
     setShowLoader(false);
     fetchRegistry();
+    // The explore canvas caches its first load. Drop that cache so the new
+    // ontology replaces the empty graph instead of leaving the chip at 0 nodes.
+    void queryClient.invalidateQueries({ queryKey: GRAPH_FULL_LOAD_QUERY_KEY });
   };
 
   const filteredEntries = entries.filter((e) => {

@@ -24,7 +24,10 @@ export function resolveGraphLayoutDecision(nodeCount: number, coordinateCoverage
   return {
     useProvidedCoordinates,
     useSmallGraphLayout,
-    layoutReady: useProvidedCoordinates || useSmallGraphLayout,
+    // An empty graph has nothing to settle. Leaving layoutReady false pins the
+    // status chip on "Stabilizing layout" because the scene never starts a
+    // layout it can finish.
+    layoutReady: nodeCount === 0 || useProvidedCoordinates || useSmallGraphLayout,
   };
 }
 

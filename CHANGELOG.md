@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Knowledge Explorer kept an empty graph after an ontology upload.** The canvas query is cached for the page, so a file loaded later left the status at `0 nodes · 0 edges` while the temporal snapshot already reported the new nodes as active. An empty graph also stayed on "Stabilizing layout" because that layout never reported that it had finished. A completed ontology load now drops the cached graph, a larger active-node count reloads it, and a burst of websocket mutations reloads once instead of settling the layout per node.
+
 - **`calculate_pagerank` rebuilt the adjacency once per node for a plain graph dictionary** (fixes #1842)
   - `_get_filtered_neighbors` called `build_adjacency(graph, directed=True)` for every node, making neighbour resolution O(N * (N + E)). `calculate_pagerank` now builds it once before the node loop and passes it in through a new optional `adjacency` argument; scores are unchanged. New `tests/kg/test_centrality_pagerank_adjacency_reuse.py`
 

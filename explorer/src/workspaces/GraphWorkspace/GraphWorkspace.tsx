@@ -42,6 +42,8 @@ import {
 } from "./plugins";
 import { explorationEffectsShouldLoad, neighborhoodPanelShouldLoad, temporalOverlayShouldLoad } from "./pluginRegistryPredicates";
 import { shouldFetchTemporalBounds, shouldFetchTemporalSnapshot } from "./temporalLifecyclePredicates";
+import { shouldReloadGraphForServerGrowth } from "./graphServerGrowth";
+import { GraphMutationBurst } from "./graphMutationBurst";
 import { createTemporalSnapshotGuards, type TemporalSnapshotResponse } from "./temporalSnapshotGuards";
 import { SMALL_GRAPH_MAX_NODES } from "./smallGraphLayout";
 import { buildRealtimeEdgeAttributes } from "./realtimeGraphAttributes";
@@ -1425,6 +1427,29 @@ export function GraphWorkspace({ externalFocusNodeId, externalFocusToken, onDirt
     applyGraphReadySummary(summary);
   }, [applyGraphReadySummary, graphReady, summary]);
 
+  // The full-load query is cached for the page. A temporal snapshot can already
+  // see nodes that landed after that cache (an ontology upload). Reload once
+  // for that larger server count; a failed reload does not retry the same count.
+  const growthReloadGuardRef = useRef<number | null>(null);
+  useEffect(() => {
+    const shouldReload = shouldReloadGraphForServerGrowth({
+      loadedNodeCount: summary?.nodeCount ?? null,
+      activeNodeCount,
+      busy: isLoading || isFetching,
+    });
+    if (!shouldReload || activeNodeCount === null) {
+      if (summary && activeNodeCount !== null && activeNodeCount <= summary.nodeCount) {
+        growthReloadGuardRef.current = null;
+      }
+      return;
+    }
+    if (growthReloadGuardRef.current === activeNodeCount) {
+      return;
+    }
+    growthReloadGuardRef.current = activeNodeCount;
+    void refetchGraph();
+  }, [activeNodeCount, isFetching, isLoading, refetchGraph, summary]);
+
   const canFetchTemporalBounds = shouldFetchTemporalBounds(summary);
   const canFetchTemporalSnapshot = shouldFetchTemporalSnapshot({
     debouncedTime,
@@ -1920,6 +1945,11 @@ export function GraphWorkspace({ externalFocusNodeId, externalFocusToken, onDirt
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${protocol}//${window.location.host}/ws/graph-updates`);
+    const burst = new GraphMutationBurst((count) => {
+      if (count > 1) {
+        void refetchGraph();
+      }
+    });
 
     socket.onmessage = (event) => {
       try {
@@ -1928,6 +1958,9 @@ export function GraphWorkspace({ externalFocusNodeId, externalFocusToken, onDirt
           return;
         }
         if (message.event !== "graph_mutation") {
+          return;
+        }
+        if (burst.note() !== "apply") {
           return;
         }
         const eventType = message.data?.event_type;
@@ -1990,9 +2023,10 @@ export function GraphWorkspace({ externalFocusNodeId, externalFocusToken, onDirt
     };
 
     return () => {
+      burst.dispose();
       socket.close();
     };
-  }, [markdownRefreshGuard]);
+  }, [markdownRefreshGuard, refetchGraph]);
 
   useEffect(() => {
     setCollapsedNeighborhoodNodeIds([]);
@@ -3057,6 +3091,7 @@ export function GraphWorkspace({ externalFocusNodeId, externalFocusToken, onDirt
     onInteractionStateChange: handleInteractionStateChange,
     onDiagnosticsChange: handleDiagnosticsChange,
     onAnalyticsChange: handleAnalyticsChange,
+    onLayoutRunningChange: setIsLayoutRunning,
   } as const;
   const showDistanceStatus = distanceVisualState.mode !== "off";
   const distanceReachableCount = Object.keys(distanceVisualState.structuralDistances).length;
