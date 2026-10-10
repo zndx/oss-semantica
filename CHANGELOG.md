@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lattice host pinned to signals-engine v0.2.0.** `semantica[signals]` (Python 3.11+) installs `signals-engine @ git+https://github.com/weathership/signals-engine.git@v0.2.0`. `semantica-signals` serves `zndx.engine.v1.Engine` and KServe OIP through that package's `LatticeEngine` and can register product servicers on the same port. Semantica does not vendor `signals-protocol` or generate its own stubs. The extra stays out of the core install and out of `semantica[all]` because the release requires Python >=3.11. grpcio stays 1.84.0. On Python 3.11–3.13 the lock resolves protobuf 7.36.2; Python 3.10 keeps protobuf 6.33.6 because the extra cannot install there. Engine changes stay in weathership/signals-engine and land here as a new tag. Protocol stamp for this pin: `fa0c09e5a9c4fd551810efbbfc5b80685d05d1fd`.
+
 - `DecisionRecorder` and `AgentContext` gain opt-in `evaluators`/`eval_config` constructor parameters that run `semantica.evals` evaluators (e.g. `decision_scores`) automatically during `record_decision()`, storing `eval_score`/`eval_passed`/`eval_details` in `Decision.metadata`. Fully backward-compatible: omitting `evaluators` leaves recording behavior unchanged. Evaluator failures are logged and never block decision persistence. Wired for the `graph_store` backend only; the `context_graph` `AgentContext` backend is a known follow-up.
 
 - **`RelationalSchemaMapper`** (#1386, part 1) by @costajohnt

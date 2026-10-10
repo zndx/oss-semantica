@@ -293,6 +293,19 @@ explorer-lite = [
   "streamlit-agraph>=0.0.45"
 ]
 
+# Lattice peer. The engine, the proto snapshot, and the generated stubs live in
+# weathership/signals-engine. This extra pins a release tag. Semantica imports
+# that package and registers product servicers beside it. It does not vendor
+# signals-protocol and it does not compile its own zndx stubs. Engine changes
+# land in that repository and arrive here as a new tag.
+#
+# v0.2.0 requires Python >=3.11, grpcio >=1.84.0, and protobuf >=7.35.1,<8.
+# The core install stays on Python 3.10, so this extra is not part of
+# ``semantica[all]``.
+signals = [
+  "signals-engine @ git+https://github.com/weathership/signals-engine.git@v0.2.0 ; python_version >= '3.11'"
+]
+
 # Everything (cross-platform — gpu excluded; install semantica[gpu] separately on Linux)
 # NOTE: there is no ``crewai`` extra to include here — see the comment above
 # the (removed) crewai entry under "Agentic Framework Integrations".
@@ -326,6 +339,7 @@ semantica-server = "semantica.server:main"
 semantica-worker = "semantica.worker:main"
 semantica-explorer = "semantica.explorer:main"
 semantica-mcp = "semantica.mcp_server:main"
+semantica-signals = "semantica.signals:main"
 
 # ---------------- TOOLING ----------------
 [tool.setuptools.packages.find]
