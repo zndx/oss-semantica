@@ -113,6 +113,33 @@ def test_hierarchy_parent_child_via_broader():
     assert payload[0]["children"][0]["uri"] == "http://example.org/Child"
 
 
+def test_hierarchy_uses_cross_file_properties_when_there_is_no_edge():
+    mock_session.get_nodes.return_value = ([
+        {
+            "id": "http://example.org/Parent",
+            "type": "skos:Concept",
+            "properties": {"content": "Parent", "scheme_uri": "http://example.org/Scheme1"},
+        },
+        {
+            "id": "http://example.org/Child",
+            "type": "skos:Concept",
+            "properties": {
+                "content": "Child",
+                "scheme_uri": "http://example.org/Scheme1",
+                "skos:broader": ["http://example.org/Parent"],
+            },
+        },
+    ], 2)
+    mock_session.get_edges.return_value = ([], 0)
+
+    response = client.get("/api/vocabulary/hierarchy?scheme=http://example.org/Scheme1")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["uri"] == "http://example.org/Parent"
+    assert payload[0]["children"][0]["uri"] == "http://example.org/Child"
+
+
 def test_hierarchy_cycle_does_not_hang():
     mock_session.get_nodes.return_value = ([
         {"id": "http://example.org/A", "type": "skos:Concept", "properties": {"content": "A"}},
@@ -128,6 +155,38 @@ def test_hierarchy_cycle_does_not_hang():
     response = client.get("/api/vocabulary/hierarchy?scheme=http://example.org/S")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+def test_import_links_a_concept_that_is_already_loaded():
+    mock_session.add_nodes_and_edges.return_value = (1, 1)
+
+    def get_node(node_id):
+        if node_id == "http://example.org/Parent":
+            return {"id": node_id, "type": "skos:Concept"}
+        return None
+
+    mock_session.get_node.side_effect = get_node
+    ttl = b"""
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix ex:   <http://example.org/> .
+ex:Child a skos:Concept ;
+    skos:prefLabel "Child" ;
+    skos:broader ex:Parent ;
+    skos:inScheme ex:MissingScheme .
+"""
+    response = client.post(
+        "/api/vocabulary/import",
+        files={"file": ("extra.ttl", ttl, "text/turtle")},
+    )
+    assert response.status_code == 200
+    _nodes, edges = mock_session.add_nodes_and_edges.call_args.args
+    assert edges == [{
+        "source_id": "http://example.org/Child",
+        "target_id": "http://example.org/Parent",
+        "type": "skos:broader",
+        "weight": 1.0,
+        "properties": {},
+    }]
 
 
 def test_import_ttl_success():

@@ -930,6 +930,31 @@ async def test_data_graph_turtle_serializes_list_of_dicts_as_uri_references(clie
     assert "{'" not in ttl and "'@id'" not in ttl
 
 
+@pytest.mark.asyncio
+async def test_data_graph_turtle_keeps_skos_notation_as_a_literal(client):
+    from semantica.explorer.routes.ontology import _data_graph_turtle_for_uri
+    from unittest.mock import MagicMock
+
+    graph = client.app.state.session.graph
+    onto_uri = "http://example.org/onto-a"
+    concept = "http://example.org/onto-a#Probe"
+    graph.add_node(
+        concept,
+        node_type="skos:Concept",
+        content="Probe",
+        scheme_uri=onto_uri,
+        **{
+            "skos:notation": "https://example.org/not-a-link",
+            "skos:scopeNote": "kept as text",
+        },
+    )
+
+    ttl = await _data_graph_turtle_for_uri(MagicMock(), client.app.state.session, onto_uri)
+    assert '"https://example.org/not-a-link"' in ttl
+    assert "<https://example.org/not-a-link>" not in ttl
+    assert "kept as text" in ttl
+
+
 
 
 def test_validate_shacl_rejects_oversized_turtle(client):

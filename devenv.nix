@@ -79,7 +79,8 @@ in
     # signals-engine is the lattice extra (Python >=3.11). explorer brings
     # fastapi and uvicorn for semantica-server. The devenv venv is
     # .devenv/state/venv, not the project .venv.
-    uv.sync.extras = [ "signals" "explorer" "warehouse" ];
+    # shacl installs pyshacl so Explorer SHACL Studio can validate, not only parse.
+    uv.sync.extras = [ "signals" "explorer" "warehouse" "shacl" ];
     venv.enable = true;
   };
 
@@ -144,7 +145,7 @@ in
       export SEMANTICA_MAX_LINK_PREDICTION_NODES="''${SEMANTICA_MAX_LINK_PREDICTION_NODES:-40000}"
       export SEMANTICA_MAX_LINK_PREDICTION_EDGES="''${SEMANTICA_MAX_LINK_PREDICTION_EDGES:-100000}"
       psql "$SEMANTICA_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT 1 FROM warehouse.v_node LIMIT 0"
-      exec uv run --extra explorer --extra warehouse semantica-server
+      exec uv run --extra explorer --extra warehouse --extra shacl semantica-server
     '';
     cwd = config.devenv.root;
     after = [

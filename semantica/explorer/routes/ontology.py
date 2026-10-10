@@ -2103,12 +2103,26 @@ async def list_skos_schemes(session: GraphSession = Depends(get_session)):
             session.get_nodes, node_type="skos:ConceptScheme", skip=0, limit=999_999
         )
         all_edges, _ = await asyncio.to_thread(session.get_edges, skip=0, limit=999_999)
-        concept_counts: Dict[str, int] = {}
+        concept_nodes, _ = await asyncio.to_thread(
+            session.get_nodes, node_type="skos:Concept", skip=0, limit=999_999
+        )
+        members: Dict[str, set[str]] = {}
+
+        def _add_member(scheme: Optional[str], concept: Optional[str]) -> None:
+            if scheme and concept:
+                members.setdefault(scheme, set()).add(concept)
+
         for edge in all_edges:
             if edge.get("type") in {"skos:inScheme", "skos:topConceptOf"}:
-                concept_counts[edge["target"]] = concept_counts.get(edge["target"], 0) + 1
+                _add_member(edge.get("target"), edge.get("source"))
             elif edge.get("type") == "skos:hasTopConcept":
-                concept_counts[edge["source"]] = concept_counts.get(edge["source"], 0) + 1
+                _add_member(edge.get("source"), edge.get("target"))
+        for concept in concept_nodes:
+            _add_member(
+                (concept.get("properties") or {}).get("scheme_uri"),
+                concept.get("id"),
+            )
+        concept_counts = {scheme: len(ids) for scheme, ids in members.items()}
 
         result = []
         for node in nodes:
@@ -2157,8 +2171,13 @@ async def search_skos_concepts(
         ]
     except Exception as exc:
         logger.warning(f"OntologyEngine.search_concepts failed, using fallback: {exc}")
-        # Fallback to session-based search
-        raw_hits = await asyncio.to_thread(session.search, body.query, 300)
+        # The session index ranks every node type together. Without this
+        # filter the first page is OWL classes and the concept hits never
+        # surface. ContextGraph has no triplet store, so this path is the
+        # one the Explorer uses.
+        raw_hits = await asyncio.to_thread(
+            session.search, body.query, 300, {"type": "skos:Concept"}
+        )
         results: List[OntologySearchResult] = []
 
         for hit in raw_hits:
@@ -2194,51 +2213,45 @@ async def search_skos_concepts(
         return results
 
 
+def _skos_text(value: Any) -> Optional[str]:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _skos_uris(*groups: Any) -> List[str]:
+    """Union of edge targets and URI lists stored on the node."""
+    found: List[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        if group is None or group == "":
+            continue
+        items = group if isinstance(group, (list, tuple)) else [group]
+        for item in items:
+            uri = str(item).strip() if item is not None else ""
+            if uri and uri not in seen:
+                seen.add(uri)
+                found.append(uri)
+    return found
+
+
 @router.get("/skos/concept/{concept_uri:path}", response_model=SKOSConceptDetail)
 async def get_skos_concept(
     concept_uri: str,
     session: GraphSession = Depends(get_session),
 ):
-    """Get SKOS concept detail using OntologyEngine.list_concepts() and search_concepts()."""
+    """Concept detail from the session graph.
+
+    The importer stores definition, notation, scope note, scheme membership,
+    hierarchy links, and mapping links on the node. In-file links are also
+    edges. A link whose other end is outside the file stays on the node and
+    is still returned.
+    """
     try:
-        from ...ontology import OntologyEngine
-        
-        # Initialize OntologyEngine with session's graph store
-        engine_config = {"store": session.graph.store if hasattr(session.graph, "store") else None}
-        engine = OntologyEngine(**engine_config)
-        
-        # Try to get scheme_uri from node first
         node = await asyncio.to_thread(session.get_node, concept_uri)
         if node is None:
             raise HTTPException(status_code=404, detail="Concept not found.")
         
         scheme_uri = node.get("properties", {}).get("scheme_uri")
-        
-        # Use OntologyEngine.list_concepts if scheme_uri is known
-        if scheme_uri:
-            concepts = await asyncio.to_thread(engine.list_concepts, scheme_uri)
-            concept_data = next((c for c in concepts if c["uri"] == concept_uri), None)
-            
-            if concept_data:
-                return SKOSConceptDetail(
-                    uri=concept_data["uri"],
-                    pref_label=concept_data["pref_label"],
-                    alt_labels=concept_data.get("alt_labels", []),
-                    hidden_labels=[],
-                    definition=None,
-                    scope_note=None,
-                    editorial_note=None,
-                    broader=[],
-                    narrower=[],
-                    related=[],
-                    exact_match=[],
-                    close_match=[],
-                    broad_match=[],
-                    narrow_match=[],
-                    scheme_uri=scheme_uri,
-                )
-        
-        # Fallback to session-based implementation
         props = node.get("properties", {})
         out_edges, _ = await asyncio.to_thread(session.get_edges, source=concept_uri, skip=0, limit=9999)
         in_edges, _ = await asyncio.to_thread(session.get_edges, target=concept_uri, skip=0, limit=9999)
@@ -2266,16 +2279,24 @@ async def get_skos_concept(
             pref_label=pref_label,
             alt_labels=list(alt_labels),
             hidden_labels=list(hidden_labels),
-            definition=props.get("definition") or props.get("skos:definition"),
-            scope_note=props.get("skos:scopeNote"),
-            editorial_note=props.get("skos:editorialNote"),
-            broader=collect_out("skos:broader") + collect_in("skos:narrower"),
-            narrower=collect_out("skos:narrower") + collect_in("skos:broader"),
-            related=collect_out("skos:related"),
-            exact_match=collect_out("skos:exactMatch"),
-            close_match=collect_out("skos:closeMatch"),
-            broad_match=collect_out("skos:broadMatch"),
-            narrow_match=collect_out("skos:narrowMatch"),
+            definition=_skos_text(props.get("definition") or props.get("skos:definition") or props.get("description")),
+            scope_note=_skos_text(props.get("skos:scopeNote")),
+            editorial_note=_skos_text(props.get("skos:editorialNote")),
+            broader=_skos_uris(
+                collect_out("skos:broader"),
+                collect_in("skos:narrower"),
+                props.get("skos:broader"),
+            ),
+            narrower=_skos_uris(
+                collect_out("skos:narrower"),
+                collect_in("skos:broader"),
+                props.get("skos:narrower"),
+            ),
+            related=_skos_uris(collect_out("skos:related"), props.get("skos:related")),
+            exact_match=_skos_uris(collect_out("skos:exactMatch"), props.get("skos:exactMatch")),
+            close_match=_skos_uris(collect_out("skos:closeMatch"), props.get("skos:closeMatch")),
+            broad_match=_skos_uris(collect_out("skos:broadMatch"), props.get("skos:broadMatch")),
+            narrow_match=_skos_uris(collect_out("skos:narrowMatch"), props.get("skos:narrowMatch")),
             scheme_uri=scheme_uri,
         )
     except HTTPException:
@@ -2315,16 +2336,24 @@ async def get_skos_concept(
             pref_label=pref_label,
             alt_labels=list(alt_labels),
             hidden_labels=list(hidden_labels),
-            definition=props.get("definition") or props.get("skos:definition"),
-            scope_note=props.get("skos:scopeNote"),
-            editorial_note=props.get("skos:editorialNote"),
-            broader=collect_out("skos:broader") + collect_in("skos:narrower"),
-            narrower=collect_out("skos:narrower") + collect_in("skos:broader"),
-            related=collect_out("skos:related"),
-            exact_match=collect_out("skos:exactMatch"),
-            close_match=collect_out("skos:closeMatch"),
-            broad_match=collect_out("skos:broadMatch"),
-            narrow_match=collect_out("skos:narrowMatch"),
+            definition=_skos_text(props.get("definition") or props.get("skos:definition") or props.get("description")),
+            scope_note=_skos_text(props.get("skos:scopeNote")),
+            editorial_note=_skos_text(props.get("skos:editorialNote")),
+            broader=_skos_uris(
+                collect_out("skos:broader"),
+                collect_in("skos:narrower"),
+                props.get("skos:broader"),
+            ),
+            narrower=_skos_uris(
+                collect_out("skos:narrower"),
+                collect_in("skos:broader"),
+                props.get("skos:narrower"),
+            ),
+            related=_skos_uris(collect_out("skos:related"), props.get("skos:related")),
+            exact_match=_skos_uris(collect_out("skos:exactMatch"), props.get("skos:exactMatch")),
+            close_match=_skos_uris(collect_out("skos:closeMatch"), props.get("skos:closeMatch")),
+            broad_match=_skos_uris(collect_out("skos:broadMatch"), props.get("skos:broadMatch")),
+            narrow_match=_skos_uris(collect_out("skos:narrowMatch"), props.get("skos:narrowMatch")),
             scheme_uri=scheme_uri,
         )
 
@@ -2848,6 +2877,12 @@ async def _data_graph_turtle_for_uri(
         "owl:equivalentClass",
         "owl:equivalentProperty",
         "owl:sameAs",
+        "skos:broader",
+        "skos:narrower",
+        "skos:related",
+        "skos:inScheme",
+        "skos:topConceptOf",
+        "skos:hasTopConcept",
         "skos:exactMatch",
         "skos:closeMatch",
         "skos:broadMatch",
@@ -2862,6 +2897,11 @@ async def _data_graph_turtle_for_uri(
         "skos:definition",
         "skos:prefLabel",
         "skos:altLabel",
+        "skos:hiddenLabel",
+        "skos:notation",
+        "skos:scopeNote",
+        "skos:editorialNote",
+        "skos:example",
         "dct:description",
         "dct:title",
         "dc:title",

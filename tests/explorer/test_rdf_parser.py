@@ -314,6 +314,12 @@ class TestOrphanEdgeFiltering:
         nodes, _ = parse_skos_file(ORPHAN_EDGE_TTL)
         assert _node(nodes, "http://example.org/Known") is not None
 
+    def test_external_broader_stays_on_the_node(self):
+        nodes, edges = parse_skos_file(ORPHAN_EDGE_TTL)
+        known = _node(nodes, "http://example.org/Known")
+        assert known["properties"]["skos:broader"] == ["http://example.org/ExternalConcept"]
+        assert edges == []
+
 
 # ---------------------------------------------------------------------------
 # parse_skos_file — empty and error cases
@@ -333,6 +339,61 @@ class TestEmptyAndErrors:
     def test_invalid_xml_raises_value_error(self):
         with pytest.raises(ValueError, match="Failed to parse RDF file"):
             parse_skos_file(b"<not-valid-xml>", rdf_format="xml")
+
+
+LEXICAL_TTL = b"""
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix ex:   <http://example.org/> .
+
+ex:Scheme a skos:ConceptScheme ;
+    skos:prefLabel "Scheme" .
+
+ex:Child a skos:Concept ;
+    skos:prefLabel "Child" ;
+    skos:inScheme ex:Scheme .
+
+ex:Parent a skos:Concept ;
+    skos:prefLabel "Parent" ;
+    skos:notation "9.1" ;
+    skos:definition "A governed parent." ;
+    skos:scopeNote "Includes the child." ;
+    skos:editorialNote "Curator note." ;
+    skos:hiddenLabel "secret" ;
+    skos:inScheme ex:Scheme ;
+    skos:narrower ex:Child ;
+    skos:exactMatch ex:Child ;
+    skos:closeMatch ex:Outside .
+"""
+
+
+class TestLexicalAndMappingFields:
+    def test_definition_notation_and_notes_are_kept(self):
+        nodes, _ = parse_skos_file(LEXICAL_TTL)
+        parent = _node(nodes, "http://example.org/Parent")
+        props = parent["properties"]
+        assert props["description"] == "A governed parent."
+        assert props["definition"] == "A governed parent."
+        assert props["skos:definition"] == "A governed parent."
+        assert props["notation"] == "9.1"
+        assert props["skos:notation"] == "9.1"
+        assert props["skos:scopeNote"] == "Includes the child."
+        assert props["skos:editorialNote"] == "Curator note."
+        assert props["skos:hiddenLabel"] == ["secret"]
+
+    def test_in_file_match_is_an_edge_and_external_match_stays_on_the_node(self):
+        nodes, edges = parse_skos_file(LEXICAL_TTL)
+        exact = _edges_of_type(edges, "skos:exactMatch")
+        assert any(
+            e["source_id"] == "http://example.org/Parent"
+            and e["target_id"] == "http://example.org/Child"
+            for e in exact
+        )
+        close = _edges_of_type(edges, "skos:closeMatch")
+        assert close == []
+        parent = _node(nodes, "http://example.org/Parent")
+        assert parent["properties"]["skos:closeMatch"] == ["http://example.org/Outside"]
+        assert parent["properties"]["scheme_uri"] == "http://example.org/Scheme"
+        assert "http://example.org/Child" in parent["properties"]["skos:narrower"]
 
 
 # ---------------------------------------------------------------------------
