@@ -709,19 +709,31 @@ report_dict = report.to_dict()
 
 ## Resource limits
 
-Live SHACL validation in the Explorer enforces four resource limits, all configurable
-through environment variables. When a limit trips, the error message names the
-variable that controls it.
+The Explorer reads these limits from the environment when the route module is
+imported. Restart the server after changing one. Library defaults stay small
+so an unconfigured process keeps the original guardrails. A deployment that
+loads a large ontology sets the variables above those defaults. When a limit
+trips, the error names the variable that controls it. The concurrency limit
+is a semaphore and does not appear in responses.
+
+`SEMANTICA_MAX_ANALYSIS_NODES` caps both nodes and edges. Health, alignment
+suggestions, the ontology editor graph, and SHACL generation all use it.
+SHACL generation refuses the whole session graph when either count is over
+the cap, so a shapes file that fits the Turtle limits still cannot be checked
+until the data graph fits too.
 
 | Environment variable | Default | What it bounds |
 | --- | --- | --- |
+| `SEMANTICA_MAX_FETCH_BYTES` | `20971520` (20 MB) | Remote ontology download |
+| `SEMANTICA_MAX_ANALYSIS_NODES` | `5000` | Nodes and edges scanned for the editor, health, alignment, and SHACL generation |
+| `SEMANTICA_MAX_ENTITIES_PER_SIDE` | `500` | Entities compared on each side of an alignment suggestion |
+| `SEMANTICA_MAX_VOCABULARY_BYTES` | `10485760` (10 MB) | SKOS vocabulary upload |
 | `SEMANTICA_MAX_SHACL_TURTLE_BYTES` | `262144` (256 KB) | Size of the submitted SHACL Turtle |
 | `SEMANTICA_MAX_SHACL_TRIPLES` | `1000` | Triple count of the parsed shapes graph |
 | `SEMANTICA_MAX_SHACL_TIMEOUT` | `15.0` | Validation timeout in seconds |
 | `SEMANTICA_MAX_SHACL_CONCURRENCY` | `4` | Concurrent validations per process |
-
-The first three are surfaced in the validation error message when exceeded; the
-concurrency limit applies as a semaphore and does not appear in responses.
+| `SEMANTICA_MAX_LINK_PREDICTION_NODES` | `10000` | Nodes scored by link prediction. Keep this at or below `50000` |
+| `SEMANTICA_MAX_LINK_PREDICTION_EDGES` | `50000` | Edges allowed before link prediction refuses the graph |
 
 ## Using SHACL validation as a CI/CD gate
 

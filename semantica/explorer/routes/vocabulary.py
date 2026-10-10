@@ -3,6 +3,7 @@ Vocabulary routes for SKOS scheme discovery, hierarchy browsing, and import.
 """
 
 import asyncio
+import os
 from collections import defaultdict
 from typing import Dict, List, Optional
 
@@ -15,7 +16,8 @@ from ..utils.rdf_parser import parse_skos_file
 
 router = APIRouter(prefix="/api/vocabulary", tags=["Vocabulary"])
 
-_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+# Read at import. Default stays 10 MB. SEMANTICA_MAX_VOCABULARY_BYTES raises it.
+_MAX_UPLOAD_BYTES = int(os.environ.get("SEMANTICA_MAX_VOCABULARY_BYTES", str(10 * 1024 * 1024)))
 _ALLOWED_EXTENSIONS = frozenset({".ttl", ".rdf", ".owl", ".xml", ".jsonld", ".json-ld", ".json"})
 
 
@@ -184,8 +186,7 @@ async def import_vocabulary(
     filename = file.filename if file else None
     if file is not None:
         if filename:
-            import os as _os
-            ext = _os.path.splitext(filename.lower())[1]
+            ext = os.path.splitext(filename.lower())[1]
             if ext not in _ALLOWED_EXTENSIONS:
                 raise HTTPException(
                     status_code=422,
@@ -195,14 +196,20 @@ async def import_vocabulary(
         if len(content) > _MAX_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=413,
-                detail=f"Upload exceeds the {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
+                detail=(
+                    f"Upload exceeds the {_MAX_UPLOAD_BYTES} byte limit; "
+                    "set SEMANTICA_MAX_VOCABULARY_BYTES to raise the limit."
+                ),
             )
     else:
         encoded = text.encode("utf-8")
         if len(encoded) > _MAX_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=413,
-                detail=f"Text payload exceeds the {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
+                detail=(
+                    f"Text payload exceeds the {_MAX_UPLOAD_BYTES} byte limit; "
+                    "set SEMANTICA_MAX_VOCABULARY_BYTES to raise the limit."
+                ),
             )
         content = encoded
 

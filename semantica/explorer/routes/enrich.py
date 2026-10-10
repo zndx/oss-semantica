@@ -4,6 +4,7 @@ Enrichment and reasoning routes.
 
 import asyncio
 import logging
+import os
 import re
 from typing import Dict, List, Optional, Tuple
 
@@ -42,8 +43,10 @@ _FACT_RE = re.compile(r"^(?P<predicate>[A-Za-z_][\w:-]*)\((?P<args>.*)\)$")
 # they return can only be checked *after* paying that full cost. To actually
 # reject an oversized graph before doing that work, check session.get_raw_counts()
 # (O(1) collection lengths) first -- see predict_links() below.
-_LINK_PREDICTION_MAX_NODES = 10_000
-_LINK_PREDICTION_MAX_EDGES = 50_000
+# Read at import. The node default stays at 10_000 and must remain <= 50_000:
+# scoring is O(N^2), and the security regression rejects a higher cap.
+_LINK_PREDICTION_MAX_NODES = int(os.environ.get("SEMANTICA_MAX_LINK_PREDICTION_NODES", "10000"))
+_LINK_PREDICTION_MAX_EDGES = int(os.environ.get("SEMANTICA_MAX_LINK_PREDICTION_EDGES", "50000"))
 _link_prediction_semaphore = asyncio.Semaphore(2)
 
 
@@ -233,6 +236,7 @@ async def predict_links(
                 detail=(
                     f"Graph has {total_nodes:,} nodes; link prediction is capped at "
                     f"{_LINK_PREDICTION_MAX_NODES:,} nodes to prevent memory exhaustion. "
+                    "Set SEMANTICA_MAX_LINK_PREDICTION_NODES to raise the limit. "
                     "Use the graph search endpoint for large graphs."
                 ),
             )
@@ -242,6 +246,7 @@ async def predict_links(
                 detail=(
                     f"Graph has {total_edges:,} edges; link prediction is capped at "
                     f"{_LINK_PREDICTION_MAX_EDGES:,} edges to prevent memory exhaustion. "
+                    "Set SEMANTICA_MAX_LINK_PREDICTION_EDGES to raise the limit. "
                     "Use the graph search endpoint for large graphs."
                 ),
             )

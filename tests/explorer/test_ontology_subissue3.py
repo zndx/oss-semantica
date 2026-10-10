@@ -446,7 +446,7 @@ ex:manager a rdf:Property ;
 
 def test_ontology_graph_ignores_unrelated_data_when_enforcing_size_limit(client):
     graph = client.app.state.session.graph
-    for index in range(5_001):
+    for index in range(_MAX_ANALYSIS_NODES + 1):
         graph.add_node(
             f"urn:unrelated:{index}",
             node_type="owl:Class",
@@ -467,7 +467,7 @@ def test_ontology_graph_ignores_unrelated_data_when_enforcing_size_limit(client)
 
 def test_ontology_graph_rejects_oversized_core_and_stops_scanning(client, monkeypatch):
     graph = client.app.state.session.graph
-    for index in range(5_001):
+    for index in range(_MAX_ANALYSIS_NODES + 1):
         graph.add_node(
             f"http://example.org/onto-a#Bulk{index:05d}",
             node_type="owl:Class",
@@ -499,10 +499,12 @@ def test_ontology_graph_rejects_oversized_core_and_stops_scanning(client, monkey
     )
 
     assert response.status_code == 413
-    assert str(_MAX_ANALYSIS_NODES) in response.json()["detail"]
-    # The graph holds 8,001 owl:Class nodes and onto-a's own sort first, so a
-    # scan that abandons at the cap sees far fewer than the whole type.
-    assert streamed < 6_000
+    detail = response.json()["detail"]
+    assert str(_MAX_ANALYSIS_NODES) in detail
+    assert "SEMANTICA_MAX_ANALYSIS_NODES" in detail
+    # onto-a's own classes sort first, so a scan that abandons at the cap
+    # sees far fewer nodes than the owned set plus the unrelated ones.
+    assert streamed < _MAX_ANALYSIS_NODES + 1_000
 
 
 def test_ontology_graph_hydrates_external_edge_targets_in_sorted_order(client):

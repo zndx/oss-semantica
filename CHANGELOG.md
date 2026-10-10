@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `semantica.kg.RelationalSchemaMapper` maps rows from a relational source (`DBIngestor`, `SnowflakeIngestor`, `DatabricksIngestor`, `PandasIngestor`, a DataFrame or plain row dicts) to the `{"entities", "relationships"}` shape `GraphBuilder` and `OntologyGenerator` consume: entity tables become entities keyed by primary key, foreign keys become typed relationships, junction tables become relationships only
   - Every entity and relationship is tagged with the `source` it came from so `ConflictDetector` can key credibility on it. New `tests/kg/test_schema_mapper.py`
 
+### Changed
+
+- **Explorer size limits are environment variables.** `SEMANTICA_MAX_ANALYSIS_NODES` (default 5,000, nodes and edges), `SEMANTICA_MAX_ENTITIES_PER_SIDE` (500), `SEMANTICA_MAX_FETCH_BYTES` (20 MB), `SEMANTICA_MAX_VOCABULARY_BYTES` (10 MB), and `SEMANTICA_MAX_LINK_PREDICTION_NODES` / `SEMANTICA_MAX_LINK_PREDICTION_EDGES` (10,000 / 50,000) join the existing `SEMANTICA_MAX_SHACL_*` settings. Defaults are unchanged. The devenv `semantica` process raises them for the SDG corpora: analysis 100,000, alignment 25,000 entities per side, fetch and vocabulary upload 64 MB, SHACL Turtle 32 MB, SHACL triples 300,000, SHACL timeout 600 seconds, link prediction 40,000 nodes and 100,000 edges. Those values clear the comprehensive TBox (15,280 nodes, 13,103 edges) and `shapes.ttl` (4,293,614 bytes, 122,589 triples). Link-prediction nodes stay under the 50,000 ceiling.
+
 ### Fixed
 
 - **The Knowledge Explorer kept an empty graph after an ontology upload.** The canvas query is cached for the page, so a file loaded later left the status at `0 nodes · 0 edges` while the temporal snapshot already reported the new nodes as active. An empty graph also stayed on "Stabilizing layout" because that layout never reported that it had finished. A completed ontology load now drops the cached graph, a larger active-node count reloads it, and a burst of websocket mutations reloads once instead of settling the layout per node.

@@ -123,11 +123,26 @@ in
     restart.on = "never";
   };
 
+  # Size caps for the SDG corpora. They are process-local so a devenv shell
+  # still imports the library defaults (pytest builds a graph one node over
+  # SEMANTICA_MAX_ANALYSIS_NODES). Measured against components/sdg-corpora:
+  # catalog TBox 8,650 nodes / 9,629 edges; comprehensive TBox 15,280 nodes /
+  # 13,103 edges (4,747 classes, 10,532 properties); shapes.ttl 4,293,614
+  # bytes / 122,589 triples. Link-prediction nodes stay under 50,000.
   processes.semantica = {
     exec = ''
       export SEMANTICA_HOST="''${SEMANTICA_HOST:-0.0.0.0}"
       export SEMANTICA_PORT="''${SEMANTICA_PORT:-${toString httpPort}}"
       export SEMANTICA_DATABASE_URL="''${SEMANTICA_DATABASE_URL:-postgresql://''${PGHOST:-127.0.0.1}:''${PGPORT:-${toString pgPort}}/semantica}"
+      export SEMANTICA_MAX_ANALYSIS_NODES="''${SEMANTICA_MAX_ANALYSIS_NODES:-100000}"
+      export SEMANTICA_MAX_ENTITIES_PER_SIDE="''${SEMANTICA_MAX_ENTITIES_PER_SIDE:-25000}"
+      export SEMANTICA_MAX_FETCH_BYTES="''${SEMANTICA_MAX_FETCH_BYTES:-67108864}"
+      export SEMANTICA_MAX_VOCABULARY_BYTES="''${SEMANTICA_MAX_VOCABULARY_BYTES:-67108864}"
+      export SEMANTICA_MAX_SHACL_TURTLE_BYTES="''${SEMANTICA_MAX_SHACL_TURTLE_BYTES:-33554432}"
+      export SEMANTICA_MAX_SHACL_TRIPLES="''${SEMANTICA_MAX_SHACL_TRIPLES:-300000}"
+      export SEMANTICA_MAX_SHACL_TIMEOUT="''${SEMANTICA_MAX_SHACL_TIMEOUT:-600}"
+      export SEMANTICA_MAX_LINK_PREDICTION_NODES="''${SEMANTICA_MAX_LINK_PREDICTION_NODES:-40000}"
+      export SEMANTICA_MAX_LINK_PREDICTION_EDGES="''${SEMANTICA_MAX_LINK_PREDICTION_EDGES:-100000}"
       psql "$SEMANTICA_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT 1 FROM warehouse.v_node LIMIT 0"
       exec uv run --extra explorer --extra warehouse semantica-server
     '';

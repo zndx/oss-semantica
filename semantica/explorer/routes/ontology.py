@@ -32,13 +32,20 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter(prefix="/api/ontology", tags=["ontology"])
 
-_MAX_FETCH_BYTES = 20 * 1024 * 1024  # 20 MB
-_MAX_ANALYSIS_NODES = 5_000   # cap for health/suggest/shacl node scans to avoid OOM
-_MAX_ENTITIES_PER_SIDE = 500  # per-ontology cap for the O(n²) pairwise suggestion loop
-_GRAPH_TOO_LARGE_DETAIL = (
-    "Ontology editor graph exceeds the maximum size "
-    f"({_MAX_ANALYSIS_NODES} nodes or edges)."
-)
+# Read at import. Restart the server after changing them. Defaults stay
+# small so an unconfigured process keeps the existing guardrails.
+_MAX_FETCH_BYTES = int(os.environ.get("SEMANTICA_MAX_FETCH_BYTES", str(20 * 1024 * 1024)))
+_MAX_ANALYSIS_NODES = int(os.environ.get("SEMANTICA_MAX_ANALYSIS_NODES", "5000"))
+_MAX_ENTITIES_PER_SIDE = int(os.environ.get("SEMANTICA_MAX_ENTITIES_PER_SIDE", "500"))
+
+
+def _graph_too_large_detail() -> str:
+    """Built at raise time so a patched cap is the number in the 413 detail."""
+    return (
+        "Ontology editor graph exceeds the maximum size "
+        f"({_MAX_ANALYSIS_NODES} nodes or edges). "
+        "Set SEMANTICA_MAX_ANALYSIS_NODES to raise the limit."
+    )
 
 
 class GraphTruncationError(Exception):
@@ -1260,7 +1267,13 @@ def _fetch_url_sync(url: str) -> bytes:
                     for chunk in resp.iter_content(65536):
                         total += len(chunk)
                         if total > _MAX_FETCH_BYTES:
-                            raise HTTPException(status_code=413, detail="Remote resource exceeds 20 MB limit.")
+                            raise HTTPException(
+                                status_code=413,
+                                detail=(
+                                    f"Remote resource exceeds {_MAX_FETCH_BYTES} bytes; "
+                                    "set SEMANTICA_MAX_FETCH_BYTES to raise the limit."
+                                ),
+                            )
                         chunks.append(chunk)
                     return b"".join(chunks)
                 finally:
@@ -1923,7 +1936,7 @@ def _collect_core_nodes(
                 continue
             core_nodes_by_id[node_id] = node
             if len(core_nodes_by_id) > _MAX_ANALYSIS_NODES:
-                raise GraphTruncationError(_GRAPH_TOO_LARGE_DETAIL)
+                raise GraphTruncationError(_graph_too_large_detail())
     return core_nodes_by_id
 
 
@@ -1943,7 +1956,7 @@ def _select_structure_edges(
                 continue
             selected_edges.append(edge)
             if len(selected_edges) > _MAX_ANALYSIS_NODES:
-                raise GraphTruncationError(_GRAPH_TOO_LARGE_DETAIL)
+                raise GraphTruncationError(_graph_too_large_detail())
     return selected_edges
 
 
@@ -2701,7 +2714,8 @@ async def _fetch_analysis_graph(
         )
         raise GraphTruncationError(
             f"Graph size (nodes={total_nodes}, edges={total_edges}) exceeds maximum analysis limit ({_MAX_ANALYSIS_NODES}). "
-            "SHACL validation is skipped because the graph is too large to validate fully under current limits."
+            "SHACL validation is skipped because the graph is too large to validate fully under current limits. "
+            "Set SEMANTICA_MAX_ANALYSIS_NODES to raise the limit."
         )
     return nodes, edges
 
