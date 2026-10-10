@@ -306,6 +306,13 @@ signals = [
   "signals-engine @ git+https://github.com/weathership/signals-engine.git@v0.2.0 ; python_version >= '3.11'"
 ]
 
+# Lab warehouse client. Admin rows stay in this peer's Postgres. Heavy graph,
+# provenance, and chunk rows are foreign tables over Signals impala_fdw
+# (Kudu tier0). Not part of semantica[all].
+warehouse = [
+  "psycopg[binary]>=3.0.0"
+]
+
 # Everything (cross-platform — gpu excluded; install semantica[gpu] separately on Linux)
 # NOTE: there is no ``crewai`` extra to include here — see the comment above
 # the (removed) crewai entry under "Agentic Framework Integrations".

@@ -8726,6 +8726,9 @@ viz = [
     { name = "seaborn" },
     { name = "umap-learn" },
 ]
+warehouse = [
+    { name = "psycopg", extra = ["binary"] },
+]
 watch = [
     { name = "watchdog" },
 ]
@@ -8817,6 +8820,7 @@ requires-dist = [
     { name = "plotly", marker = "extra == 'viz'", specifier = ">=6.8.0" },
     { name = "prometheus-client", marker = "extra == 'monitoring'", specifier = ">=0.14.0" },
     { name = "protobuf", specifier = ">=5.29.1,<8.0" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'warehouse'", specifier = ">=3.0.0" },
     { name = "psycopg", extras = ["binary", "pool"], marker = "extra == 'vectorstore-pgvector'", specifier = ">=3.0.0" },
     { name = "psycopg2-binary", marker = "extra == 'graph-apache-age'", specifier = ">=2.9.0" },
     { name = "pulsar-client", marker = "extra == 'infra'", specifier = ">=3.0.0" },
@@ -8877,7 +8881,7 @@ requires-dist = [
     { name = "weaviate-client", marker = "extra == 'vectorstore-weaviate'", specifier = ">=4.0.0" },
     { name = "websockets", marker = "extra == 'explorer'", specifier = ">=15.0.1" },
 ]
-provides-extras = ["llm-openai", "llm-groq", "llm-gemini", "llm-anthropic", "llm-ollama", "llm-deepseek", "llm-novita", "llm-litellm", "llm-instructor", "llm-typesafe", "llm-all", "documents", "parse-docling", "parse-pdf", "shacl", "db-snowflake", "db-databricks", "db-arrow", "db-salesforce", "db-redshift", "ingest-dynamics365", "db-cassandra", "db-bigquery", "ingest-looker", "ingest-parquet", "ingest-arrow", "ingest-tableau", "ingest-sap", "ingest-servicenow", "ingest-airflow", "ingest-git", "db-all", "models-huggingface", "embeddings-local", "nlp-spacy", "nlp-langdetect", "graph-neo4j", "graph-falkordb", "graph-amazon-neptune", "graph-apache-age", "graph-embeddings", "graph-all", "tripletstore-oxigraph", "vectorstore-faiss", "vectorstore-qdrant", "vectorstore-weaviate", "vectorstore-pinecone", "vectorstore-milvus", "vectorstore-pgvector", "vectorstore-sqlite", "vectorstore-all", "infra", "cloud", "monitoring", "viz", "media", "gpu", "agno", "langchain", "google-adk", "open-ontologies", "watch", "split-tiktoken", "split-community", "split-topic", "split-all", "explorer", "explorer-lite", "signals", "all"]
+provides-extras = ["llm-openai", "llm-groq", "llm-gemini", "llm-anthropic", "llm-ollama", "llm-deepseek", "llm-novita", "llm-litellm", "llm-instructor", "llm-typesafe", "llm-all", "documents", "parse-docling", "parse-pdf", "shacl", "db-snowflake", "db-databricks", "db-arrow", "db-salesforce", "db-redshift", "ingest-dynamics365", "db-cassandra", "db-bigquery", "ingest-looker", "ingest-parquet", "ingest-arrow", "ingest-tableau", "ingest-sap", "ingest-servicenow", "ingest-airflow", "ingest-git", "db-all", "models-huggingface", "embeddings-local", "nlp-spacy", "nlp-langdetect", "graph-neo4j", "graph-falkordb", "graph-amazon-neptune", "graph-apache-age", "graph-embeddings", "graph-all", "tripletstore-oxigraph", "vectorstore-faiss", "vectorstore-qdrant", "vectorstore-weaviate", "vectorstore-pinecone", "vectorstore-milvus", "vectorstore-pgvector", "vectorstore-sqlite", "vectorstore-all", "infra", "cloud", "monitoring", "viz", "media", "gpu", "agno", "langchain", "google-adk", "open-ontologies", "watch", "split-tiktoken", "split-community", "split-topic", "split-all", "explorer", "explorer-lite", "signals", "warehouse", "all"]
 
 [package.metadata.requires-dev]
 dev = [

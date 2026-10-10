@@ -58,6 +58,11 @@ async def lifespan(app: FastAPI):
         try:
             logging.info("Initializing Graph engine and Database connection...")
             graph = ContextGraph()
+            database_url = (os.environ.get("SEMANTICA_DATABASE_URL") or "").strip()
+            if database_url:
+                from .warehouse import attach_warehouse
+
+                attach_warehouse(graph, database_url)
             app.state.session = GraphSession(graph)
             app.state.ws_manager = ConnectionManager()
             app.state.event_loop = asyncio.get_running_loop()
