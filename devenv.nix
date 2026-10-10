@@ -35,6 +35,13 @@ in
     pkgs.openssl.out
   ] + ":${signalsRoot}/.devenv/impala/lib";
   env.SEMANTICA_DATABASE_URL = "postgresql://127.0.0.1:${toString pgPort}/semantica";
+  # Password login for user principal zndx. SPNEGO is offered, not required.
+  # The warehouse keytab is the semantica service principal, not signals.
+  env.SEMANTICA_LOGIN_REALM = "DEV.VISTA.ZNDX.ORG";
+  env.SEMANTICA_LOGIN_USER = "zndx";
+  env.SEMANTICA_SPNEGO_KEYTAB = "${signalsRoot}/.devenv/kdc/http.keytab";
+  env.SEMANTICA_SPNEGO_HOST = "tinybox.dev.vista.zndx.org";
+  env.SEMANTICA_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:${toString httpPort},http://tinybox.dev.vista.zndx.org:${toString httpPort}";
 
   services.postgres = {
     enable = true;

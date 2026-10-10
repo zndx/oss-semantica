@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Explorer sign-in uses the Kerberos user principal `zndx`.** A remote browser posts a username and password to `/api/login`. The username is the principal primary. SPNEGO is accepted when a client sends `Negotiate`, and it is not required. The warehouse FDW identity is the `semantica` service principal. `signals` stays the Signals project's service principal.
+
 - **Devenv builds the Knowledge Explorer and serves it on the product port.** `devenv up` runs `npm ci` and `npm run build` in `explorer/` when `semantica/static/index.html` is missing or older than the frontend sources. `GET /` then returns that bundle instead of the "frontend is not built" JSON. The bundle stays gitignored.
 
 - **Devenv Postgres is the admin database. Heavy tables are Kudu tier0 in the Signals warehouse.** `devenv up` starts Postgres on `:5588` (`semantica`) and installs the Signals-built `impala_fdw` into it. Semantica does not vendor that extension. `admin.graph` stays local. `semantica_node_tier0`, `semantica_edge_tier0`, `semantica_provenance_tier0`, and `semantica_chunk_tier0` are created by `signals_kudu_create` in `signals_dataproducts` (the FDW exec function refuses `CREATE TABLE`) and read through `warehouse.v_*`. Writes are `kudu_scan` upserts. Iceberg is the settle tier, not the live store: Impala Iceberg DML is still pending. Graph mutations go to Kudu when `SEMANTICA_DATABASE_URL` is set. Install the client with `semantica[warehouse]`.

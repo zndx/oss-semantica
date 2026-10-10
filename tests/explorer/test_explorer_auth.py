@@ -45,6 +45,7 @@ def client():
 def test_protected_route_returns_503_when_auth_not_configured(client, monkeypatch):
     monkeypatch.delenv("SEMANTICA_ALLOW_ANONYMOUS", raising=False)
     monkeypatch.delenv("SEMANTICA_API_KEY", raising=False)
+    monkeypatch.delenv("SEMANTICA_LOGIN_REALM", raising=False)
 
     resp = client.get("/api/graph/nodes")
 
@@ -54,6 +55,7 @@ def test_protected_route_returns_503_when_auth_not_configured(client, monkeypatc
 def test_write_route_also_refuses_when_auth_not_configured(client, monkeypatch):
     monkeypatch.delenv("SEMANTICA_ALLOW_ANONYMOUS", raising=False)
     monkeypatch.delenv("SEMANTICA_API_KEY", raising=False)
+    monkeypatch.delenv("SEMANTICA_LOGIN_REALM", raising=False)
 
     resp = client.post("/api/export", json={"format": "json"})
 
@@ -128,6 +130,7 @@ def test_anonymous_opt_in_allows_requests_without_a_key(client, monkeypatch):
 def test_public_routes_stay_public_when_auth_not_configured(client, monkeypatch, path):
     monkeypatch.delenv("SEMANTICA_ALLOW_ANONYMOUS", raising=False)
     monkeypatch.delenv("SEMANTICA_API_KEY", raising=False)
+    monkeypatch.delenv("SEMANTICA_LOGIN_REALM", raising=False)
 
     resp = client.get(path)
 
@@ -137,6 +140,66 @@ def test_public_routes_stay_public_when_auth_not_configured(client, monkeypatch,
 # ---------------------------------------------------------------------------
 # WebSocket handshake: header or query-param key, same policy as REST.
 # ---------------------------------------------------------------------------
+
+def test_password_login_uses_the_user_principal(client, monkeypatch):
+    """Username zndx is the principal. signals is not a Semantica login."""
+    monkeypatch.delenv("SEMANTICA_ALLOW_ANONYMOUS", raising=False)
+    monkeypatch.delenv("SEMANTICA_API_KEY", raising=False)
+    monkeypatch.setenv("SEMANTICA_LOGIN_REALM", "DEV.VISTA.ZNDX.ORG")
+    monkeypatch.setenv("SEMANTICA_LOGIN_USER", "zndx")
+    client.app.state.password_verifier = (
+        lambda username, password: username == "zndx" and password == "secret"
+    )
+
+    denied = client.get("/api/graph/nodes")
+    assert denied.status_code == 401
+    assert "zndx" in denied.json()["detail"]
+
+    wrong_user = client.post(
+        "/api/login", json={"username": "signals", "password": "secret"}
+    )
+    assert wrong_user.status_code == 401
+
+    signed_in = client.post(
+        "/api/login", json={"username": "zndx", "password": "secret"}
+    )
+    assert signed_in.status_code == 200
+    assert signed_in.json()["username"] == "zndx"
+    assert client.get("/api/graph/nodes").status_code == 200
+
+    session = client.get("/api/session")
+    assert session.json()["authenticated"] is True
+    assert session.json()["username"] == "zndx"
+
+
+def test_spnego_is_optional(client, monkeypatch):
+    """A Negotiate token is accepted. A browser without one uses the password form."""
+    monkeypatch.delenv("SEMANTICA_ALLOW_ANONYMOUS", raising=False)
+    monkeypatch.delenv("SEMANTICA_API_KEY", raising=False)
+    monkeypatch.setenv("SEMANTICA_LOGIN_REALM", "DEV.VISTA.ZNDX.ORG")
+    monkeypatch.setenv("SEMANTICA_LOGIN_USER", "zndx")
+    monkeypatch.setenv("SEMANTICA_SPNEGO_KEYTAB", "/nonexistent/http.keytab")
+    monkeypatch.setenv("SEMANTICA_SPNEGO_HOST", "tinybox.dev.vista.zndx.org")
+
+    denied = client.get("/api/graph/nodes")
+    assert denied.status_code == 401
+    assert denied.headers.get("www-authenticate") == "Negotiate"
+
+    def _accept(authorization):
+        if authorization == "Negotiate dG9rZW4=":
+            return "zndx"
+        return None
+
+    import semantica.explorer.dependencies as dependencies
+
+    monkeypatch.setattr(dependencies, "_spnego_username", lambda request: _accept(
+        request.headers.get("authorization")
+    ))
+    accepted = client.get(
+        "/api/graph/nodes", headers={"Authorization": "Negotiate dG9rZW4="}
+    )
+    assert accepted.status_code == 200
+
 
 def test_websocket_rejects_connection_without_key_when_configured(client, monkeypatch):
     monkeypatch.delenv("SEMANTICA_ALLOW_ANONYMOUS", raising=False)

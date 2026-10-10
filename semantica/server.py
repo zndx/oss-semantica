@@ -26,7 +26,14 @@ try:
     from .context.context_graph import ContextGraph
     from .explorer.session import GraphSession
     from .explorer.ws import ConnectionManager, install_graph_updates_websocket
-    from .explorer.dependencies import anonymous_access_allowed, get_expected_api_key, require_auth
+    from .explorer.dependencies import (
+        anonymous_access_allowed,
+        get_expected_api_key,
+        login_realm,
+        login_user,
+        require_auth,
+    )
+    from .explorer.login import install_login_routes
     from .explorer.markdown_resources import MarkdownResourceRegistry
     from .explorer.runtime import explorer_capabilities, install_mutation_bridge
     EXPLORER_AVAILABLE = True
@@ -48,12 +55,18 @@ async def lifespan(app: FastAPI):
                 "SEMANTICA_ALLOW_ANONYMOUS=true — all Explorer API routes are "
                 "unauthenticated. Do not expose this process beyond localhost."
             )
+        elif login_realm():
+            logging.info(
+                "Explorer API authentication: password login for %s@%s.",
+                login_user(),
+                login_realm(),
+            )
         elif get_expected_api_key():
             logging.info("Explorer API authentication: enabled (SEMANTICA_API_KEY set).")
         else:
             logging.warning(
                 "Explorer API authentication: NOT CONFIGURED. Protected routes "
-                "will return 503 until SEMANTICA_API_KEY is set."
+                "will return 503 until SEMANTICA_API_KEY or SEMANTICA_LOGIN_REALM is set."
             )
         try:
             logging.info("Initializing Graph engine and Database connection...")
@@ -113,6 +126,7 @@ app.add_middleware(
 )
 
 if EXPLORER_AVAILABLE:
+    install_login_routes(app)
     install_graph_updates_websocket(app, _cors_origins)
 
 

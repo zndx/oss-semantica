@@ -13,7 +13,11 @@ from typing import Any, Dict, List, Sequence, Set
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from .dependencies import is_valid_api_key
+from .dependencies import (
+    SESSION_COOKIE,
+    anonymous_access_allowed,
+    is_valid_api_key,
+)
 
 _WS_MAX_MESSAGE_BYTES = 64 * 1024
 
@@ -35,11 +39,26 @@ def install_graph_updates_websocket(
             return
 
         # Browser clients pass the API key as a query parameter because the
-        # WebSocket API cannot set custom headers.
+        # WebSocket API cannot set custom headers. A password-login cookie is
+        # sent on the same-origin handshake. SPNEGO is optional.
         candidate = websocket.headers.get("x-api-key") or websocket.query_params.get(
             "api_key"
         )
-        if not is_valid_api_key(candidate):
+        sessions = getattr(app.state, "login_sessions", None)
+        session_ok = bool(
+            sessions and sessions.username(websocket.cookies.get(SESSION_COOKIE))
+        )
+        spnego_ok = False
+        if not session_ok and not is_valid_api_key(candidate):
+            from .login import accept_spnego
+
+            spnego_ok = accept_spnego(websocket.headers.get("authorization")) is not None
+        if not (
+            anonymous_access_allowed()
+            or is_valid_api_key(candidate)
+            or session_ok
+            or spnego_ok
+        ):
             await websocket.close(code=4401)
             return
 

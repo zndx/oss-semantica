@@ -1,5 +1,6 @@
 -- Semantica Postgres is an impala_fdw client of the Signals warehouse.
--- Placeholders: __FDW_SO__ __KEYTAB__ __HS2_HOST__ __KUDU_MASTERS__
+-- Placeholders: __FDW_SO__ __KEYTAB__ __HS2_HOST__ __KUDU_MASTERS__ __PRINCIPAL__
+-- __PRINCIPAL__ is the semantica service principal. signals@ stays with Signals.
 -- Do not DROP objects in the Signals database on :5455.
 
 DROP FOREIGN TABLE IF EXISTS semantica_chunk_tier0 CASCADE;
@@ -45,6 +46,6 @@ CREATE SERVER impala_kudu_srv
 CREATE USER MAPPING IF NOT EXISTS FOR CURRENT_USER
   SERVER impala_kudu_srv
   OPTIONS (
-    principal 'signals@DEV.VISTA.ZNDX.ORG',
+    principal '__PRINCIPAL__',
     keytab '__KEYTAB__'
   );

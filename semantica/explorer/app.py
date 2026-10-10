@@ -16,7 +16,14 @@ from fastapi.staticfiles import StaticFiles
 from .. import __version__
 from ..context.agent_memory import AgentMemory
 from ..context.context_graph import ContextGraph
-from .dependencies import anonymous_access_allowed, get_expected_api_key, require_auth
+from .dependencies import (
+    anonymous_access_allowed,
+    get_expected_api_key,
+    login_realm,
+    login_user,
+    require_auth,
+)
+from .login import install_login_routes
 from .markdown_resources import MarkdownResourceRegistry
 from .runtime import explorer_capabilities, install_mutation_bridge
 from .session import GraphSession
@@ -96,12 +103,18 @@ def create_app(
                 "all API routes are unauthenticated. Do not expose this "
                 "process beyond localhost."
             )
+        elif login_realm():
+            _lifespan_logger.info(
+                "Explorer API authentication: password login for %s@%s.",
+                login_user(),
+                login_realm(),
+            )
         elif get_expected_api_key():
             _lifespan_logger.info("Explorer API authentication: enabled (SEMANTICA_API_KEY set).")
         else:
             _lifespan_logger.warning(
                 "Explorer API authentication: NOT CONFIGURED. All protected "
-                "routes will return 503 until SEMANTICA_API_KEY is set."
+                "routes will return 503 until SEMANTICA_API_KEY or SEMANTICA_LOGIN_REALM is set."
             )
 
         app.state.event_loop = asyncio.get_running_loop()
@@ -185,6 +198,7 @@ def create_app(
     app.include_router(vocabulary_router, dependencies=_auth)
     app.include_router(ontology_router, dependencies=_auth)
 
+    install_login_routes(app)
     install_graph_updates_websocket(app, settings["allowed_origins"])
 
     @app.get("/", include_in_schema=False)

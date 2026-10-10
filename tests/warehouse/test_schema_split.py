@@ -48,6 +48,9 @@ def test_install_uses_the_signals_fdw_and_does_not_vendor_it():
     assert "SIGNALS_ROOT" in script
     assert "signals_kudu_create" in script
     assert "kinit -kt" in script
+    assert "semantica.keytab" in script
+    assert "semantica@DEV.VISTA.ZNDX.ORG" in script
+    assert "signals.keytab" not in script
     assert "SELECT impala_fdw_exec" not in script
     assert "signals_catalog" in script
     catalog = _text("catalog.sql")

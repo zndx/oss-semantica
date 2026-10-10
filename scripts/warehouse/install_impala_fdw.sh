@@ -23,7 +23,10 @@ cp -f "$SO" "$tmp"
 mv -f "$tmp" "$EXT_DIR/lib/impala_fdw.so"
 FDW_SO="$EXT_DIR/lib/impala_fdw.so"
 
-KEYTAB="${IMPALA_FDW_KEYTAB:-$SIGNALS_ROOT/.devenv/kdc/signals.keytab}"
+# semantica@ is this peer's warehouse service principal. signals@ stays the
+# Signals project's service principal.
+KEYTAB="${IMPALA_FDW_KEYTAB:-$SIGNALS_ROOT/.devenv/kdc/semantica.keytab}"
+PRINCIPAL="${IMPALA_FDW_PRINCIPAL:-semantica@DEV.VISTA.ZNDX.ORG}"
 if [[ ! -f "$KEYTAB" ]]; then
   echo "Kerberos keytab missing: $KEYTAB"
   exit 1
@@ -52,6 +55,7 @@ sed \
   -e "s|__KEYTAB__|$KEYTAB|g" \
   -e "s|__HS2_HOST__|$HS2_HOST|g" \
   -e "s|__KUDU_MASTERS__|$KUDU_MASTERS|g" \
+  -e "s|__PRINCIPAL__|$PRINCIPAL|g" \
   "$ROOT/scripts/warehouse/fdw.sql" | "${PSQL[@]}"
 
 # impala_fdw_exec refuses CREATE TABLE (#SL.00000029.RANGEDDL). Kudu tables
@@ -65,8 +69,8 @@ if [[ ! -x "$CREATE" ]]; then
 fi
 export KUDU_MASTERS="${KUDU_MASTERS:-tinybox.dev.vista.zndx.org:7051}"
 export KRB5CCNAME="${KRB5CCNAME:-$ROOT/.devenv/krb5cc}"
-if ! kinit -kt "$KEYTAB" signals@DEV.VISTA.ZNDX.ORG; then
-  echo "kinit failed for signals@DEV.VISTA.ZNDX.ORG"
+if ! kinit -kt "$KEYTAB" "$PRINCIPAL"; then
+  echo "kinit failed for $PRINCIPAL"
   echo "  Guru: #SL.00000028.HS2GSSAPI"
   exit 1
 fi

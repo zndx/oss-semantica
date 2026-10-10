@@ -15,3 +15,5 @@ import pytest
 def _default_to_anonymous_explorer_access(monkeypatch):
     monkeypatch.setenv("SEMANTICA_ALLOW_ANONYMOUS", "true")
     monkeypatch.delenv("SEMANTICA_API_KEY", raising=False)
+    monkeypatch.delenv("SEMANTICA_LOGIN_REALM", raising=False)
+    monkeypatch.delenv("SEMANTICA_SPNEGO_KEYTAB", raising=False)
