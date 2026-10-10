@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sdg-corpora` is a component.** `components/sdg-corpora` tracks `git@github.com:zndx/sdg-corpora.git` (`trunk`). The catalog OWL already on the explorer graph is `ontology/sdg-ontology.owl`. SKOS is `vocabulary/vocabulary.ttl` and `vocabulary/domain-concepts.ttl`. SHACL is `ddl-comprehensive/f56a014216105664/shapes.ttl`.
+
 - **Explorer sign-in uses the Kerberos user principal `zndx`.** A remote browser posts a username and password to `/api/login`. The username is the principal primary. SPNEGO is accepted when a client sends `Negotiate`, and it is not required. The warehouse FDW identity is the `semantica` service principal. `signals` stays the Signals project's service principal.
 
 - **Devenv builds the Knowledge Explorer and serves it on the product port.** `devenv up` runs `npm ci` and `npm run build` in `explorer/` when `semantica/static/index.html` is missing or older than the frontend sources. `GET /` then returns that bundle instead of the "frontend is not built" JSON. The bundle stays gitignored.

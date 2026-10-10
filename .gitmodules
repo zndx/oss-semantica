@@ -1,0 +1,4 @@
+[submodule "components/sdg-corpora"]
+	path = components/sdg-corpora
+	url = git@github.com:zndx/sdg-corpora.git
+	branch = trunk
