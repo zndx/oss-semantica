@@ -276,9 +276,11 @@ def main():
 
     Binds to loopback by default; set SEMANTICA_HOST to expose beyond
     localhost (e.g. behind a reverse proxy that terminates auth/TLS).
+    SEMANTICA_PORT selects the listen port (default 8000).
     """
     host = os.environ.get("SEMANTICA_HOST", "127.0.0.1")
-    uvicorn.run(app, host=host, port=8000)
+    raw_port = (os.environ.get("SEMANTICA_PORT") or "8000").strip() or "8000"
+    uvicorn.run(app, host=host, port=int(raw_port))
 
 if __name__ == "__main__":
     main()
