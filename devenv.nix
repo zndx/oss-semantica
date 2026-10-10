@@ -54,8 +54,16 @@ in
     curl
     uv
     postgresql_16
-    nodejs_22
   ];
+
+  # The explorer is the JavaScript project. npm ci stays in processes.frontend
+  # (npm.install would run `npm install` from the shell, not `npm ci`).
+  languages.javascript = {
+    enable = true;
+    directory = "./explorer";
+    package = pkgs.nodejs_22;
+    npm.enable = true;
+  };
 
   languages.python = {
     enable = true;
