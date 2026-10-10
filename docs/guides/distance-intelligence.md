@@ -6,6 +6,8 @@ icon: "route"
 
 `ContextGraph` distance intelligence answers the structural question that pure semantic similarity cannot: given two nodes, what is their precise relationship in terms of graph topology, path weight, and inferential confidence? Use it to annotate attribution chains with hop counts and confidence decay, rank retrieval results by structural proximity to an anchor node, and surface implied connections for analyst review.
 
+The Explorer toolbar button labeled Semantic is a different measure. It asks `GET /api/graph/semantic-neighborhood` for the cosine neighborhood of one stored vector per node. The distance bands on this page (`direct`, `near`, `mid-range`, `distant`) are hop labels, not that cosine. Structural, Ego, and Heatmap stay on hops and do not need vectors. When a node has no `embedding` / `semantic_embedding` property, the session fills the gap from an IRI-keyed NumPy archive (`SEMANTICA_EMBEDDING_CACHE`, or `.devenv/state/embeddings/sdg-embeddinggemma-2.npz` when the file is present). `scripts/embed_sdg_gemma.py` builds that archive outside the HTTP process. The score is still one vector per node, so a multi-vector model such as ColBERT is not used.
+
 ## What Is Distance Intelligence?
 
 Distance intelligence quantifies and analyzes the structural relationships between nodes in your knowledge graph. It provides detailed metadata about graph paths including hop counts, distance bands, confidence decay, and path analysis.

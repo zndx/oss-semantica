@@ -65,6 +65,7 @@ class GraphSession:
         self._graph_revision: int = 0
         self._cached_embeddings: Optional[Dict[str, List[float]]] = None
         self._cached_graph_revision: int = -1
+        self._cached_embedding_stamp: Optional[tuple] = None
         self.rebuild_search_index()
 
     @classmethod
@@ -651,6 +652,7 @@ class GraphSession:
         self._graph_revision += 1
         self._cached_embeddings = None
         self._cached_graph_revision = -1
+        self._cached_embedding_stamp = None
 
     @staticmethod
     def _coerce_embedding_vector(value: Any) -> Optional[List[float]]:
@@ -674,12 +676,16 @@ class GraphSession:
         return vector if vector else None
 
     def get_cached_embeddings(self, force_refresh: bool = False) -> Dict[str, List[float]]:
+        from .embedding_cache import cache_stamp, lookup_vectors
+
+        stamp = cache_stamp()
         with self._lock:
             current_revision = self._graph_revision
             if (
                 not force_refresh
                 and self._cached_embeddings is not None
                 and self._cached_graph_revision == current_revision
+                and self._cached_embedding_stamp == stamp
             ):
                 return self._cached_embeddings
             raw_nodes = [
@@ -699,6 +705,7 @@ class GraphSession:
         )
 
         embeddings: Dict[str, List[float]] = {}
+        missing: List[str] = []
         for raw in raw_nodes:
             if not isinstance(raw, dict):
                 continue
@@ -706,23 +713,35 @@ class GraphSession:
             node_id = normalized.get("id")
             if not node_id:
                 continue
+            node_id = str(node_id)
             properties = normalized.get("properties") if isinstance(normalized.get("properties"), dict) else {}
+            vector = None
             for key in embedding_keys:
                 vector = self._coerce_embedding_vector(normalized.get(key, properties.get(key)))
                 if vector is not None:
-                    embeddings[str(node_id)] = vector
+                    embeddings[node_id] = vector
                     break
+            if vector is None:
+                missing.append(node_id)
+
+        # Property vectors win. The archive fills IRIs that have none.
+        # The stamp is read at call time, so a file written after startup
+        # is picked up on the next request.
+        if missing and stamp is not None:
+            embeddings.update(lookup_vectors(missing))
 
         with self._lock:
-            if self._graph_revision == current_revision:
+            if self._graph_revision == current_revision and cache_stamp() == stamp:
                 self._cached_embeddings = embeddings
                 self._cached_graph_revision = current_revision
+                self._cached_embedding_stamp = stamp
             return embeddings
 
     def invalidate_embedding_cache(self) -> None:
         with self._lock:
             self._cached_embeddings = None
             self._cached_graph_revision = -1
+            self._cached_embedding_stamp = None
 
     def build_nx_graph(self) -> nx.DiGraph:
         """Build a NetworkX view of the session graph for PathFinder traversal.

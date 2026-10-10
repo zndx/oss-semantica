@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Explorer semantic distance can use an IRI-keyed EmbeddingGemma archive.** `GET /api/graph/semantic-neighborhood` still scores one cosine per node. When a node has no stored vector, the session reads `SEMANTICA_EMBEDDING_CACHE`, or `.devenv/state/embeddings/sdg-embeddinggemma-2.npz` when that file exists. `scripts/embed_sdg_gemma.py` writes the archive with `sentence-transformers` and `google/embeddinggemma-2` (768-d, `SentenceSimilarity`, text-only, bfloat16), one process per GPU. The HTTP process does not load the model. Multi-vector / ColBERT embeddings are not a fit: the metric and the Qdrant store both assume one vector per node. A vector already stored on the node is left as it is.
+
 - **`sdg-corpora` is a component.** `components/sdg-corpora` tracks `git@github.com:zndx/sdg-corpora.git` (`trunk`). The catalog OWL already on the explorer graph is `ontology/sdg-ontology.owl`. SKOS is `vocabulary/vocabulary.ttl` and `vocabulary/domain-concepts.ttl`. SHACL is `ddl-comprehensive/f56a014216105664/shapes.ttl`.
 
 - **Explorer sign-in uses the Kerberos user principal `zndx`.** A remote browser posts a username and password to `/api/login`. The username is the principal primary. SPNEGO is accepted when a client sends `Negotiate`, and it is not required. The warehouse FDW identity is the `semantica` service principal. `signals` stays the Signals project's service principal.
