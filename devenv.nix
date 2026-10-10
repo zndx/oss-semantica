@@ -53,7 +53,6 @@ in
     grpcurl
     curl
     uv
-    postgresql_16
   ];
 
   # The explorer is the JavaScript project. npm ci stays in processes.frontend
