@@ -54,6 +54,7 @@ in
     curl
     uv
     postgresql_16
+    nodejs_22
   ];
 
   languages.python = {
@@ -87,6 +88,27 @@ in
     restart.on = "never";
   };
 
+  # The HTTP process serves semantica/static/index.html. That tree is
+  # gitignored, so build it here. Vite writes the bundle; the server reads
+  # it on each request.
+  processes.frontend = {
+    exec = ''
+      set -euo pipefail
+      cd explorer
+      if [[ ! -d node_modules/vite ]]; then
+        npm ci
+      fi
+      index=../semantica/static/index.html
+      if [[ ! -f "$index" ]] || find src public index.html vite.config.ts package.json package-lock.json -newer "$index" -print -quit | grep -q .; then
+        npm run build
+      else
+        echo "explorer bundle is current"
+      fi
+    '';
+    cwd = config.devenv.root;
+    restart.on = "never";
+  };
+
   processes.semantica = {
     exec = ''
       export SEMANTICA_HOST="''${SEMANTICA_HOST:-0.0.0.0}"
@@ -96,7 +118,10 @@ in
       exec uv run --extra explorer --extra warehouse semantica-server
     '';
     cwd = config.devenv.root;
-    after = [ "devenv:processes:warehouse@completed" ];
+    after = [
+      "devenv:processes:warehouse@completed"
+      "devenv:processes:frontend@completed"
+    ];
     restart.on = "on_failure";
     ready = {
       http.get = {
