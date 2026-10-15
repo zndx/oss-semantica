@@ -85,14 +85,36 @@ function CausalFlow({ chain, loading }: { chain: ChainStep[]; loading: boolean }
   );
 }
 
+interface DecisionRow {
+  decision_id: string;
+  category?: string;
+  outcome?: string;
+  scenario?: string;
+  reasoning?: string;
+  confidence?: number;
+  decision_maker?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface ExplainPayload {
+  upstream?: ChainStep[];
+  downstream?: ChainStep[];
+  total_connections?: number;
+}
+
 export function DecisionWorkspace() {
-  const [decisions, setDecisions] = useState<{ decision_id: string; category?: string; outcome?: string }[]>([]);
-  const [selected, setSelected] = useState<{ decision_id: string; category?: string; outcome?: string } | null>(null);
+  const [decisions, setDecisions] = useState<DecisionRow[]>([]);
+  const [selected, setSelected] = useState<DecisionRow | null>(null);
   const [chain, setChain] = useState<ChainStep[]>([]);
+  const [direction, setDirection] = useState<"upstream" | "downstream">("upstream");
+  const [explain, setExplain] = useState<ExplainPayload | null>(null);
+  const [precedents, setPrecedents] = useState<DecisionRow[]>([]);
   const [chainLoading, setChainLoading] = useState(false);
   const [listLoading, setListLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const [runStatus, setRunStatus] = useState("");
 
   // Tracks the active chain request so stale responses from rapid selections are ignored.
   const chainCtrlRef = useRef<AbortController | null>(null);
@@ -111,7 +133,7 @@ export function DecisionWorkspace() {
       .then((data) => {
         if (ctrl.signal.aborted) return;
         setDecisions(data);
-        if (data.length > 0) void loadChain(data[0]);
+        if (data.length > 0) void loadChain(data[0], direction);
       })
       .catch((e) => {
         if (e?.name !== "AbortError") {
@@ -128,7 +150,7 @@ export function DecisionWorkspace() {
   // Cancel any in-flight chain request when the workspace unmounts.
   useEffect(() => () => { chainCtrlRef.current?.abort(); }, []);
 
-  async function loadChain(d: { decision_id: string; category?: string; outcome?: string }) {
+  async function loadChain(d: DecisionRow, nextDirection = direction) {
     chainCtrlRef.current?.abort();
     const ctrl = new AbortController();
     chainCtrlRef.current = ctrl;
@@ -138,13 +160,20 @@ export function DecisionWorkspace() {
     setChain([]);
     setError("");
     try {
-      const res = await fetch(`/api/decisions/${encodeURIComponent(d.decision_id)}/chain`, { signal: ctrl.signal });
+      const encoded = encodeURIComponent(d.decision_id);
+      const res = await fetch(`/api/decisions/${encoded}/chain?direction=${nextDirection}`, { signal: ctrl.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (res.status === 207 && !ctrl.signal.aborted) {
         setError(data.message || "Warning: Partial success loading chain.");
       }
       if (!ctrl.signal.aborted) setChain(data.chain || []);
+      const [explainRes, precedentRes] = await Promise.all([
+        fetch(`/api/decisions/${encoded}/explain`, { signal: ctrl.signal }),
+        fetch(`/api/decisions/${encoded}/precedents`, { signal: ctrl.signal }),
+      ]);
+      if (!ctrl.signal.aborted && explainRes.ok) setExplain(await explainRes.json());
+      if (!ctrl.signal.aborted && precedentRes.ok) setPrecedents(await precedentRes.json());
     } catch (e) {
       if (e instanceof Error && e.name !== "AbortError") {
         setError(e.message);
@@ -209,7 +238,7 @@ export function DecisionWorkspace() {
                   <button
                     key={d.decision_id}
                     className={`ws-list-item${active ? " ws-list-item--active" : ""}`}
-                    onClick={() => void loadChain(d)}
+                    onClick={() => void loadChain(d, direction)}
                   >
                     <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 5, color: active ? "#e8f6ff" : "var(--ws-text)" }}>
                       {d.decision_id}
@@ -250,18 +279,105 @@ export function DecisionWorkspace() {
               {selected.category && (
                 <span className="ws-pill ws-pill--mono">{selected.category}</span>
               )}
+              <p style={{ margin: "12px 0 0", color: "var(--ws-text)", fontSize: 14, lineHeight: 1.5 }}>{selected.scenario}</p>
+              {selected.reasoning && (
+                <p style={{ margin: "8px 0 0", color: "var(--ws-text-muted)", fontSize: 13, lineHeight: 1.5 }}>{selected.reasoning}</p>
+              )}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                {typeof selected.confidence === "number" && (
+                  <span className="ws-pill ws-pill--mono">confidence {selected.confidence.toFixed(2)}</span>
+                )}
+                {(selected.decision_maker || selected.metadata?.decision_maker) && (
+                  <span className="ws-pill">{String(selected.decision_maker || selected.metadata?.decision_maker)}</span>
+                )}
+                {selected.metadata?.caller_project && (
+                  <span className="ws-pill ws-pill--mono">caller {String(selected.metadata.caller_project)}</span>
+                )}
+                {selected.metadata?.run_id && (
+                  <span className="ws-pill ws-pill--mono">run {String(selected.metadata.run_id)}</span>
+                )}
+                {selected.metadata?.policy_result && (
+                  <span className="ws-pill">policy {String(selected.metadata.policy_result)}</span>
+                )}
+              </div>
+              <p style={{ margin: "10px 0 0", color: "var(--ws-text-dim)", fontSize: 12 }}>
+                A restart drops this in-memory graph. The warehouse sink keeps the row in Kudu until Signals settles it to Iceberg. Startup does not read it back yet.
+              </p>
             </div>
+
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const text = instruction.trim();
+                if (!text) return;
+                setRunStatus("Asking the lattice engine…");
+                void fetch("/api/agent/runs", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ instruction: text, caller_project: "semantica-explorer" }),
+                })
+                  .then(async (response) => {
+                    const payload = await response.json();
+                    if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+                    setRunStatus("Run finished. Reload the list to see decisions the engine recorded.");
+                    setInstruction("");
+                  })
+                  .catch((reason) => {
+                    setRunStatus(reason instanceof Error ? reason.message : "Run failed.");
+                  });
+              }}
+              style={{ marginBottom: 16 }}
+            >
+              <div className="ws-eyebrow" style={{ marginBottom: 6 }}>Ask the lattice agent</div>
+              <textarea
+                className="ws-input"
+                value={instruction}
+                onChange={(event) => setInstruction(event.target.value)}
+                placeholder="Ask Grok to use the ontology, forward chain, or record a decision."
+                rows={3}
+                style={{ width: "100%", marginBottom: 8 }}
+              />
+              <button className="ws-btn" type="submit">Run on the engine</button>
+              {runStatus && <div style={{ marginTop: 8, fontSize: 12, color: "var(--ws-text-muted)" }}>{runStatus}</div>}
+            </form>
 
             {/* Chain section */}
             <div className="ws-card" style={{ padding: 22 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
                 <div style={{ width: 8, height: 8, borderRadius: 999, background: "linear-gradient(135deg, var(--ws-accent), var(--ws-amber))", boxShadow: "0 0 10px rgba(74,163,255,0.4)" }} />
                 <div style={{ color: "var(--ws-text)", fontSize: 14, fontWeight: 700 }}>Causal Chain</div>
+                <button type="button" className="ws-btn" style={{ marginLeft: "auto" }} onClick={() => {
+                  const next = direction === "upstream" ? "downstream" : "upstream";
+                  setDirection(next);
+                  void loadChain(selected, next);
+                }}>{direction}</button>
                 {chain.length > 0 && !chainLoading && (
                   <span className="ws-pill ws-pill--accent" style={{ marginLeft: "auto" }}>{chain.length} step{chain.length !== 1 ? "s" : ""}</span>
                 )}
               </div>
               <CausalFlow chain={chain} loading={chainLoading} />
+            </div>
+
+            {explain && (
+              <div className="ws-card" style={{ padding: 22, marginTop: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Explainability</div>
+                <div style={{ fontSize: 13, color: "var(--ws-text-muted)" }}>
+                  {explain.total_connections ?? 0} causal connections.
+                  Upstream {explain.upstream?.length ?? 0}. Downstream {explain.downstream?.length ?? 0}.
+                </div>
+              </div>
+            )}
+
+            <div className="ws-card" style={{ padding: 22, marginTop: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Precedents</div>
+              {precedents.length === 0 ? (
+                <div style={{ fontSize: 13, color: "var(--ws-text-dim)" }}>No similar decisions in this graph.</div>
+              ) : precedents.map((item) => (
+                <button key={item.decision_id} type="button" className="ws-list-item" onClick={() => void loadChain(item, direction)}>
+                  <div style={{ fontWeight: 700, fontSize: 12 }}>{item.outcome || item.decision_id}</div>
+                  <div style={{ fontSize: 12, color: "var(--ws-text-muted)" }}>{item.scenario}</div>
+                </button>
+              ))}
             </div>
           </div>
         ) : (

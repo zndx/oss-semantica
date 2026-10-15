@@ -8,10 +8,60 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..dependencies import get_session
-from ..schemas import CausalChainResponse, CausalDistanceReport, ComplianceResponse, DecisionResponse
+from ..schemas import (
+    CausalChainResponse,
+    CausalDistanceReport,
+    ComplianceResponse,
+    DecisionExplainResponse,
+    DecisionResponse,
+    LinkDecisionsRequest,
+    RecordDecisionRequest,
+)
 from ..session import GraphSession
 
 router = APIRouter(prefix="/api/decisions", tags=["Decisions"])
+
+
+_CAUSAL_TYPES = {"CAUSED", "INFLUENCED", "PRECEDENT_FOR", "CAUSES", "INFLUENCES", "PRECEDES"}
+_POLICY_RESULTS = {"checked", "passed", "blocked", "exception"}
+
+
+def _chain_step(decision) -> dict:
+    metadata = dict(getattr(decision, "metadata", None) or {})
+    return {
+        "id": decision.decision_id,
+        "type": decision.category,
+        "content": decision.outcome or decision.scenario,
+        "relationship": metadata.get("causal_edge") or "causal",
+        "hop": metadata.get("causal_distance"),
+        "scenario": decision.scenario,
+        "reasoning": decision.reasoning,
+        "outcome": decision.outcome,
+        "confidence": decision.confidence,
+        "decision_maker": decision.decision_maker,
+        "caller_project": metadata.get("caller_project"),
+        "run_id": metadata.get("run_id"),
+        "tx_id": metadata.get("tx_id"),
+    }
+
+
+def _annotate_edges(graph, focus_id: str, steps: list[dict]) -> list[dict]:
+    """Name the causal edge that joins each step to the next, or to the focus."""
+    edges = list(getattr(graph, "edges", []) or [])
+
+    def between(left: str, right: str) -> str:
+        for edge in edges:
+            pair = {getattr(edge, "source_id", None), getattr(edge, "target_id", None)}
+            if pair == {left, right}:
+                kind = str(getattr(edge, "edge_type", "") or "")
+                if kind.upper() in _CAUSAL_TYPES:
+                    return kind
+        return "causal"
+
+    ids = [step["id"] for step in steps] + [focus_id]
+    for index, step in enumerate(steps):
+        step["relationship"] = between(ids[index], ids[index + 1])
+    return steps
 
 
 def _node_to_decision(node: dict) -> DecisionResponse:
@@ -69,6 +119,31 @@ async def causal_distance(
 # NOTE: static routes (e.g. /causal-distance above) must stay above this
 # dynamic route — Starlette matches in definition order, otherwise the static
 # path is captured as decision_id (see issue #1531).
+@router.get("/precedents", response_model=list[DecisionResponse])
+async def search_precedents(
+    scenario: str = Query(..., min_length=1),
+    limit: int = Query(5, ge=1, le=20),
+    session: GraphSession = Depends(get_session),
+):
+    """Lexical precedents for a scenario. Static path, above ``/{decision_id}``."""
+    found = await asyncio.to_thread(
+        session.graph.find_precedents_by_scenario,
+        scenario,
+        limit=limit,
+        similarity_threshold=0.05,
+    )
+    rows = []
+    for item in found:
+        decision = item.get("decision") or {}
+        decision_id = decision.get("id") or decision.get("decision_id") or ""
+        node = session.get_node(decision_id) if decision_id else None
+        if node is not None:
+            row = _node_to_decision(node)
+            row.metadata = {**row.metadata, "similarity": item.get("similarity")}
+            rows.append(row)
+    return rows
+
+
 @router.get("/{decision_id}", response_model=DecisionResponse)
 async def get_decision(
     decision_id: str,
@@ -83,24 +158,141 @@ async def get_decision(
 @router.get("/{decision_id}/chain", response_model=CausalChainResponse)
 async def get_causal_chain(
     decision_id: str,
+    direction: str = Query("upstream"),
+    max_depth: int = Query(5, ge=1, le=20),
     session: GraphSession = Depends(get_session),
 ):
+    """Walk CAUSED / INFLUENCED / PRECEDENT_FOR edges, not ordinary neighbors."""
+    if direction not in {"upstream", "downstream"}:
+        raise HTTPException(status_code=422, detail="direction must be upstream or downstream")
     node = await asyncio.to_thread(session.get_node, decision_id)
     if node is None:
         raise HTTPException(status_code=404, detail=f"Decision '{decision_id}' not found")
 
-    neighbors = await asyncio.to_thread(session.get_neighbors, decision_id, 5)
-    chain = [
-        {
-            "id": neighbor.get("id"),
-            "type": neighbor.get("type"),
-            "relationship": neighbor.get("relationship"),
-            "hop": neighbor.get("hop"),
-            "content": neighbor.get("content", ""),
-        }
-        for neighbor in neighbors
-    ]
-    return CausalChainResponse(decision_id=decision_id, chain=chain)
+    from ...context.causal_analyzer import CausalChainAnalyzer
+
+    analyzer = CausalChainAnalyzer(session.graph)
+    decisions = await asyncio.to_thread(
+        analyzer.get_causal_chain, decision_id, direction, max_depth
+    )
+    steps = _annotate_edges(session.graph, decision_id, [_chain_step(item) for item in decisions])
+    return CausalChainResponse(decision_id=decision_id, direction=direction, chain=steps)
+
+
+@router.get("/{decision_id}/explain", response_model=DecisionExplainResponse)
+async def explain_decision(
+    decision_id: str,
+    max_depth: int = Query(5, ge=1, le=20),
+    session: GraphSession = Depends(get_session),
+):
+    """Upstream causes and downstream effects for one decision.
+
+    Computed on the Explorer graph. This does not build an AgentContext
+    or a second vector store.
+    """
+    node = await asyncio.to_thread(session.get_node, decision_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail=f"Decision '{decision_id}' not found")
+
+    from ...context.causal_analyzer import CausalChainAnalyzer
+
+    analyzer = CausalChainAnalyzer(session.graph)
+
+    def _both():
+        upstream = analyzer.get_causal_chain(decision_id, "upstream", max_depth)
+        downstream = analyzer.get_causal_chain(decision_id, "downstream", max_depth)
+        return upstream, downstream
+
+    upstream, downstream = await asyncio.to_thread(_both)
+    up_steps = _annotate_edges(session.graph, decision_id, [_chain_step(item) for item in upstream])
+    down_steps = _annotate_edges(session.graph, decision_id, [_chain_step(item) for item in downstream])
+    return DecisionExplainResponse(
+        decision_id=decision_id,
+        upstream=up_steps,
+        downstream=down_steps,
+        total_connections=len(up_steps) + len(down_steps),
+    )
+
+
+@router.post("", response_model=DecisionResponse)
+async def record_decision(
+    body: RecordDecisionRequest,
+    session: GraphSession = Depends(get_session),
+):
+    """Record a decision on the Explorer graph.
+
+    ``record_decision`` writes a ``decision`` node through the graph mutation
+    callback. When the warehouse is attached, that callback upserts the node
+    through Postgres and impala_fdw into Kudu. Iceberg is the settle tier
+    Signals owns. This process does not write Iceberg and does not reload
+    Kudu on startup.
+    """
+    if body.policy_result and body.policy_result not in _POLICY_RESULTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"policy_result must be one of {sorted(_POLICY_RESULTS)}",
+        )
+    metadata = {
+        key: value
+        for key, value in {
+            "caller_project": body.caller_project,
+            "caller_agent": body.caller_agent,
+            "run_id": body.run_id,
+            "tx_id": body.tx_id,
+            "policy_id": body.policy_id,
+            "policy_result": body.policy_result,
+        }.items()
+        if value
+    }
+    outcome = "blocked" if body.policy_result == "blocked" else body.outcome
+
+    def _write() -> str:
+        decision_id = session.graph.record_decision(
+            category=body.category,
+            scenario=body.scenario,
+            reasoning=body.reasoning,
+            outcome=outcome,
+            confidence=body.confidence,
+            entities=body.entities,
+            decision_maker=body.decision_maker,
+            metadata=metadata,
+        )
+        if body.caused_by:
+            session.graph.add_causal_relationship(
+                body.caused_by, decision_id, body.relationship
+            )
+        return decision_id
+
+    try:
+        decision_id = await asyncio.to_thread(_write)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    node = await asyncio.to_thread(session.get_node, decision_id)
+    if node is None:
+        raise HTTPException(status_code=500, detail="Decision was not stored.")
+    return _node_to_decision(node)
+
+
+@router.post("/link")
+async def link_decisions(
+    body: LinkDecisionsRequest,
+    session: GraphSession = Depends(get_session),
+):
+    def _link() -> bool:
+        return session.graph.add_causal_relationship(
+            body.source_id, body.target_id, body.relationship
+        )
+
+    try:
+        linked = await asyncio.to_thread(_link)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not linked:
+        raise HTTPException(
+            status_code=404,
+            detail="Both endpoints must be decision nodes that are already stored.",
+        )
+    return {"source_id": body.source_id, "target_id": body.target_id, "relationship": body.relationship}
 
 
 @router.get("/{decision_id}/precedents", response_model=list[DecisionResponse])

@@ -195,6 +195,7 @@ async def build_kb(request: BuildRequest):
 if EXPLORER_AVAILABLE:
     try:
         from .explorer.routes import (
+            agent_runs,
             analytics,
             annotations,
             decisions,
@@ -214,6 +215,7 @@ if EXPLORER_AVAILABLE:
         app.include_router(analytics.router, dependencies=_auth)
         app.include_router(annotations.router, dependencies=_auth)
         app.include_router(decisions.router, dependencies=_auth)
+        app.include_router(agent_runs.router, dependencies=_auth)
         app.include_router(enrich.router, dependencies=_auth)
         app.include_router(export_import.router, dependencies=_auth)
         app.include_router(graph.router, dependencies=_auth)

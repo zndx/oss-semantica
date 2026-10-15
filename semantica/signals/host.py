@@ -136,8 +136,11 @@ def main() -> None:
         SIGNALS_ENGINE_TAG,
         signals_engine.PROTOCOL_SHA,
     )
+    from semantica.signals.agents import build_native_service
+
     serve_lattice(
         directory=directory,
         announce_to_directory=announce,
+        native=(build_native_service(),),
         block=True,
     )

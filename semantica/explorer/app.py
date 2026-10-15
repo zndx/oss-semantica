@@ -169,6 +169,7 @@ def create_app(
         _logger.exception("Unhandled exception")
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
+    from .routes.agent_runs import router as agent_runs_router
     from .routes.analytics import router as analytics_router
     from .routes.annotations import router as annotations_router
     from .routes.decisions import router as decisions_router
@@ -187,6 +188,7 @@ def create_app(
     app.include_router(graph_router, dependencies=_auth)
     app.include_router(analytics_router, dependencies=_auth)
     app.include_router(decisions_router, dependencies=_auth)
+    app.include_router(agent_runs_router, dependencies=_auth)
     app.include_router(temporal_router, dependencies=_auth)
     app.include_router(enrich_router, dependencies=_auth)
     app.include_router(export_import_router, dependencies=_auth)

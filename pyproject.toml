@@ -303,7 +303,8 @@ explorer-lite = [
 # The core install stays on Python 3.10, so this extra is not part of
 # ``semantica[all]``.
 signals = [
-  "signals-engine @ git+https://github.com/weathership/signals-engine.git@v0.2.0 ; python_version >= '3.11'"
+  "signals-engine @ git+https://github.com/weathership/signals-engine.git@v0.2.0 ; python_version >= '3.11'",
+  "agent-client-protocol>=0.7.0 ; python_version >= '3.11'",
 ]
 
 # Lab warehouse client. Admin rows stay in this peer's Postgres. Heavy graph,

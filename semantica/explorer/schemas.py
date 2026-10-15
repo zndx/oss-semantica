@@ -173,7 +173,39 @@ class DecisionResponse(BaseModel):
 
 class CausalChainResponse(BaseModel):
     decision_id: str
+    direction: str = "upstream"
     chain: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class RecordDecisionRequest(BaseModel):
+    category: str = Field(..., min_length=1, max_length=100)
+    scenario: str = Field(..., min_length=1, max_length=5000)
+    reasoning: str = Field(..., min_length=1, max_length=10000)
+    outcome: str = Field(..., min_length=1, max_length=1000)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    decision_maker: Optional[str] = Field(default=None, max_length=200)
+    entities: List[str] = Field(default_factory=list)
+    caused_by: Optional[str] = None
+    relationship: str = "CAUSED"
+    caller_project: Optional[str] = Field(default=None, max_length=200)
+    caller_agent: Optional[str] = Field(default=None, max_length=200)
+    run_id: Optional[str] = Field(default=None, max_length=80)
+    tx_id: Optional[str] = Field(default=None, max_length=80)
+    policy_id: Optional[str] = Field(default=None, max_length=100)
+    policy_result: Optional[str] = Field(default=None, max_length=32)
+
+
+class LinkDecisionsRequest(BaseModel):
+    source_id: str = Field(..., min_length=1)
+    target_id: str = Field(..., min_length=1)
+    relationship: str = "CAUSED"
+
+
+class DecisionExplainResponse(BaseModel):
+    decision_id: str
+    upstream: List[Dict[str, Any]] = Field(default_factory=list)
+    downstream: List[Dict[str, Any]] = Field(default_factory=list)
+    total_connections: int = 0
 
 
 class ComplianceResponse(BaseModel):
