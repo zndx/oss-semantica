@@ -301,7 +301,7 @@ export function DecisionWorkspace() {
                 )}
               </div>
               <p style={{ margin: "10px 0 0", color: "var(--ws-text-dim)", fontSize: 12 }}>
-                A restart drops this in-memory graph. The warehouse sink keeps the row in Kudu until Signals settles it to Iceberg. Startup does not read it back yet.
+                A restart drops this in-memory graph. Semantica writes the decision to Postgres, and Postgres sends it to the warehouse through the FDW. Startup does not read it back yet.
               </p>
             </div>
 

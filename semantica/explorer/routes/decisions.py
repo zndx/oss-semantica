@@ -221,11 +221,13 @@ async def record_decision(
 ):
     """Record a decision on the Explorer graph.
 
-    ``record_decision`` writes a ``decision`` node through the graph mutation
-    callback. When the warehouse is attached, that callback upserts the node
-    through Postgres and impala_fdw into Kudu. Iceberg is the settle tier
-    Signals owns. This process does not write Iceberg and does not reload
-    Kudu on startup.
+    ``record_decision`` writes a ``decision`` node on the Explorer graph.
+    The lattice engine reaches this route over HTTP. It does not open a
+    warehouse connection. When the warehouse client is attached, the
+    mutation callback writes the node to Postgres, and Postgres sends the
+    insert through impala_fdw to the warehouse. Iceberg settle belongs to
+    Signals. This process does not write Iceberg and does not reload the
+    warehouse on startup.
     """
     if body.policy_result and body.policy_result not in _POLICY_RESULTS:
         raise HTTPException(

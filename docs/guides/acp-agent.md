@@ -28,7 +28,7 @@ Every decision the engine records carries the signals-protocol identity of the c
 - `caller_agent` from `kwargs_json` or `x-signals-agent`
 - `run_id` and `tx_id` from `RunRequest`
 
-Those fields are properties on the decision node. The warehouse mutation callback upserts that node through Postgres and impala_fdw into Kudu. Signals settles Kudu into Iceberg. Querying the foreign tables covers both tiers. This process does not write Iceberg, and a restart does not read the Kudu rows back into the Explorer graph.
+Those fields are properties on the decision node. The engine does not open a warehouse connection. Semantica writes the node to its Postgres database. Postgres sends that insert through impala_fdw to the warehouse. Signals settles the warehouse table into Iceberg, and a later query through the FDW can see both tiers. Semantica does not write Iceberg, and a restart does not read the warehouse rows back into the Explorer graph.
 
 ## What the workspace shows
 
