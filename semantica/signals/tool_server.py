@@ -193,7 +193,7 @@ def _handle(api: SemanticaApi, message: dict) -> dict | None:
             "jsonrpc": "2.0",
             "id": msg_id,
             "result": {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": os.environ.get("SEMANTICA_MCP_PROTOCOL") or "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "semantica", "version": "0.7.0"},
             },
@@ -225,7 +225,18 @@ def _handle(api: SemanticaApi, message: dict) -> dict | None:
     }
 
 
+_FRAMING = "headers"
+
+
 def _read_message() -> dict | None:
+    global _FRAMING
+    first = sys.stdin.buffer.peek(1) if hasattr(sys.stdin.buffer, "peek") else b""
+    if first[:1] == b"{" or _FRAMING == "line":
+        _FRAMING = "line"
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        return json.loads(line.decode())
     headers = {}
     while True:
         line = sys.stdin.buffer.readline()
@@ -233,6 +244,9 @@ def _read_message() -> dict | None:
             return None
         if line in {b"\r\n", b"\n"}:
             break
+        if line[:1] == b"{":
+            _FRAMING = "line"
+            return json.loads(line.decode())
         key, _, value = line.decode("ascii", errors="replace").partition(":")
         headers[key.strip().lower()] = value.strip()
     length = int(headers.get("content-length") or "0")
@@ -244,16 +258,26 @@ def _read_message() -> dict | None:
 
 def _write(message: dict) -> None:
     raw = json.dumps(message).encode()
-    sys.stdout.buffer.write(f"Content-Length: {len(raw)}\r\n\r\n".encode() + raw)
+    if _FRAMING == "line":
+        sys.stdout.buffer.write(raw + b"\n")
+    else:
+        sys.stdout.buffer.write(f"Content-Length: {len(raw)}\r\n\r\n".encode() + raw)
     sys.stdout.buffer.flush()
 
 
 def main() -> None:
+    print("semantica tool server ready", file=sys.stderr, flush=True)
     api = SemanticaApi()
     while True:
         message = _read_message()
         if message is None:
             return
+        if message.get("method") == "initialize":
+            params = message.get("params") or {}
+            version = params.get("protocolVersion") or "2024-11-05"
+            message = dict(message)
+            # Echo the client's protocol version in the handler via a side field.
+            os.environ["SEMANTICA_MCP_PROTOCOL"] = str(version)
         response = _handle(api, message)
         if response is not None:
             _write(response)

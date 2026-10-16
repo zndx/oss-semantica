@@ -78,20 +78,29 @@ class GrokSubscriptionDriver:
         events: list[dict] = []
 
         class Deny(Client):
-            async def read_text_file(self, path, session_id, **kwargs):
+            async def request_permission(self, session_id, tool_call, options, **kwargs):
+                from acp.schema import DeniedOutcome, RequestPermissionResponse
+
+                return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
+
+            async def read_text_file(self, session_id, path, line=None, limit=None, **kwargs):
                 return None
 
-            async def write_text_file(self, path, content, session_id, **kwargs):
-                return False
+            async def write_text_file(self, session_id, path, content, **kwargs):
+                return None
 
-            async def create_terminal(self, **kwargs):
+            async def create_terminal(self, session_id, command, **kwargs):
                 return None
 
             async def session_update(self, session_id, update, **kwargs):
                 content = getattr(update, "content", None)
-                text = getattr(content, "text", None)
+                text = getattr(content, "text", None) if content is not None else None
                 if text:
                     events.append({"kind": "message", "text": text})
+                    return
+                title = getattr(update, "title", None)
+                if title:
+                    events.append({"kind": "message", "text": str(title)})
 
         env = {key: value for key, value in os.environ.items() if not key.startswith("XAI_")}
         thinking = (os.environ.get("SEMANTICA_THINKING_PEER") or "").strip()
@@ -101,7 +110,7 @@ class GrokSubscriptionDriver:
         python = os.environ.get("SEMANTICA_TOOL_PYTHON") or os.path.realpath(sys.executable)
         command = grok_bin()
         client = Deny()
-        manager = spawn(
+        async with spawn(
             client,
             command,
             "agent",
@@ -111,10 +120,7 @@ class GrokSubscriptionDriver:
             "stdio",
             env=env,
             cwd=os.getcwd(),
-        )
-        connection = None
-        try:
-            connection, _process = await manager.__aenter__()
+        ) as (connection, _process):
             await connection.initialize(
                 protocol_version=protocol_version,
                 client_info=Implementation(name="semantica-engine", version="0.7.0"),
@@ -137,9 +143,6 @@ class GrokSubscriptionDriver:
                 decision_id,
             )
             await connection.prompt(prompt=[text_block(prompt)], session_id=session.session_id)
-        finally:
-            if connection is not None:
-                await manager.__aexit__(None, None, None)
         if cancel.is_set():
             events.append({"kind": "done", "state": "cancelled", "text": "cancelled"})
             return events
@@ -157,8 +160,11 @@ def _mcp_env(env: dict[str, str]):
         "SEMANTICA_API_KEY",
         "SEMANTICA_THINKING_PEER",
         "SEMANTICA_LATTICE_PEERS",
+        "PYTHONPATH",
         "PATH",
         "HOME",
+        "LD_LIBRARY_PATH",
+        "VIRTUAL_ENV",
     )
     return [EnvVariable(name=name, value=env[name]) for name in names if env.get(name)]
 
